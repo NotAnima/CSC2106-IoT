@@ -4,8 +4,8 @@
 #include <ArduinoJson.h>
 
 // Replace with actual network credentials
-const char* ssid = "AT_13";
-const char* password = "connectiongranted";
+const char* ssid = "wifissid";
+const char* password = "password";
 
 struct RoutingTableEntry {
   int nodeID;
