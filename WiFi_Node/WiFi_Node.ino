@@ -4,8 +4,8 @@
 #include <ArduinoJson.h>
 
 // Replace with actual network credentials
-const char* ssid = "yourSSID";
-const char* password = "yourPassword";
+const char* ssid = "AT_13";
+const char* password = "connectiongranted";
 
 struct RoutingTableEntry {
   int nodeID;
@@ -37,15 +37,46 @@ void setupWiFi() {
   Serial.begin(115200);
   WiFi.begin(ssid, password);
   
+Serial.print("Start WiFi ..");
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
-    Serial.print(".");
+    Serial.print("Connecting ..");
   }
-  
-  Serial.println("");
-  Serial.println("WiFi connected");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
+  M5.Lcd.setCursor(0, 20, 2);
+  M5.Lcd.print("IP: ");
+  M5.Lcd.println(WiFi.localIP());
+}
+
+// Function to display routing table on the M5StickC Plus LCD
+void displayRoutingTable() {
+  M5.Lcd.println("Routing Table:");
+  for (auto& entry : routingTable) {
+    M5.Lcd.printf("ID: %d, IP: %s, MAC: %s\n", entry.nodeID, entry.ip.c_str(), entry.mac.c_str());
+  }
+}
+
+// Function to display node history on the M5StickC Plus LCD
+void displayNodeHistory() {
+  M5.Lcd.println("Node History:");
+  for (int nodeId : nodeHistory) {
+    M5.Lcd.printf("Node ID: %d\n", nodeId);
+  }
+}
+
+// Function to display routing table on the Serial Monitor
+void displayRoutingTableSerial() {
+  Serial.println("Routing Table:");
+  for (auto& entry : routingTable) {
+    Serial.printf("ID: %d, IP: %s, MAC: %s\n", entry.nodeID, entry.ip.c_str(), entry.mac.c_str());
+  }
+}
+
+// Function to display node history on the Serial Monitor
+void displayNodeHistorySerial() {
+  Serial.println("Node History:");
+  for (int nodeId : nodeHistory) {
+    Serial.printf("Node ID: %d\n", nodeId);
+  }
 }
 
 // Updates the routing table with the given node ID, IP, and MAC address.
@@ -87,13 +118,42 @@ void sendNodePacket(const NodePacket& packet) {
 void setup() {
   setupWiFi();
   // Setup other initialisations if necessary
+  // Dummy data
+  updateRoutingTable(1, "192.168.1.2", "AA:BB:CC:DD:EE:01");
+  updateRoutingTable(2, "192.168.1.3", "AA:BB:CC:DD:EE:02");
+  updateNodeHistory(1);
+  updateNodeHistory(2);
 }
 
 // Example usage of sending a node packet.
 // This demonstrates how to create and send a packet with example data.
 void loop() {
-  // Example usage, replace with your own logic
+  static unsigned long lastUpdateTime = 0;
+  const long updateInterval = 10000; // Update interval set to 10 seconds
+
+  // Current time in milliseconds
+  unsigned long currentMillis = millis();
+
+  // Check if it's time to update the routing table
+  if (currentMillis - lastUpdateTime >= updateInterval) {
+    lastUpdateTime = currentMillis;
+
+    // Add a new dummy node to the routingTable
+    int newNodeID = routingTable.size() + 1;
+    String newIP = "192.168.1." + String(newNodeID + 1);
+    String newMAC = "AA:BB:CC:DD:EE:" + String(newNodeID, HEX);
+    updateRoutingTable(newNodeID, newIP, newMAC);
+
+    // Update and display routing table on LCD and serial monitor
+    displayRoutingTable();
+    displayRoutingTableSerial();
+  }
+
+  // Existing logic for node packet transmission
   NodePacket examplePacket = {1, 2, 3, 0.9};
   sendNodePacket(examplePacket);
-  delay(10000); // Delay for demonstration purposes, adjust as needed
+  
+  // Use a delay for demonstration; consider a non-blocking approach for real applications
+  delay(10000);
 }
+
