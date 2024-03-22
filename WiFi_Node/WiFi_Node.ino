@@ -18,6 +18,7 @@ struct NodePacket {
   int senderNode;
   int receiverNode;
   float binCapacity;
+  long rootTimestampSent;
 };
 
 // A dynamic array of RoutingTableEntry objects, used to store and manage routing information.
