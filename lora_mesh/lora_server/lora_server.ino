@@ -44,14 +44,16 @@ void loop() {
   /* === HANDLING RESPONSE TO ADD NODE TO ROUTING TABLE REQ === */
   /* === & REQUEST FOR HANDLING CAPACITY BINS AT SERVER     === */
   /* ========================================================== */
-  if (rf95.waitAvailableTimeout(1000)) {
+  if (rf95.waitAvailableTimeout(1500)) {
     Packet packet;
 
     if (rf95.recv((uint8_t *)&packet, sizeof(packet))) {
-      if (packet.msgType == MSG_TYPE_REQ_FORWARD_NODE) {
-        handle_node_packet(packet.data.nodePacket);
-      } else if (packet.msgType == MSG_TYPE_CAPACITY) {
-        handle_capacity_packet(packet.data.capacityPacket);
+      if (packet.authKey == AUTH_KEY) {
+        if (packet.msgType == MSG_TYPE_REQ_FORWARD_NODE) {
+          handle_node_packet(packet.data.nodePacket);
+        } else if (packet.msgType == MSG_TYPE_CAPACITY) {
+          handle_capacity_packet(packet.data.capacityPacket);
+        }
       }
     }
   }
@@ -69,7 +71,6 @@ NodePacket construct_node_packet() {
 
   node.nodeId = NODE_ID;
   nodePacket.node = node;
-  nodePacket.authKey = AUTH_KEY;
 
   return nodePacket;
 }
@@ -99,7 +100,7 @@ void sendPacket(const uint8_t *data, uint8_t len) {
 }
 
 void handle_node_packet(NodePacket &packet) {
-  if (packet.authKey == AUTH_KEY && packet.node.nodeId != 2) {
+  if (packet.node.nodeId != 2) {
     Serial.println("REQUEST: Received to be a node's forwarding node");
     NodePacket nodePacket = construct_node_packet();
     Packet packet;
@@ -112,14 +113,14 @@ void handle_node_packet(NodePacket &packet) {
 
 void handle_capacity_packet(CapacityPacket &cpacket) {
   // Ensure that the capacityPacket is for the correct forwarding node
-  if (cpacket.receiverNode.nodeId == NODE_ID && cpacket.authKey == AUTH_KEY) {
+  if (cpacket.receiverNode.nodeId == NODE_ID) {
     Serial.println("RESPONSE: Received capacity packet at server");
 
     AckPacket ackPacket = construct_ack_packet(cpacket.alertNode.nodeId, cpacket.senderNode.nodeId, MSG_TYPE_ACK_SUCCEED);
     sendPacket((uint8_t *)&ackPacket, sizeof(ackPacket));
 
     Serial.print("RESPONSE: Bin capacity for node ");
-    Serial.print(cpacket.senderNode.nodeId);
+    Serial.print(cpacket.alertNode.nodeId);
     Serial.print(" is at ");
     Serial.print(cpacket.binCapacity);
     Serial.println("%");

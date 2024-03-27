@@ -21,8 +21,8 @@ RH_RF95 rf95(RFM95_CS, RFM95_INT);
 /* ========================================================== */
 /* =============== MESH DEFINITIONS & STRUCTS =============== */
 /* ========================================================== */
-#define AUTH_KEY 0x01  // Shared secret key to authenticate nodes
-#define NODE_ID 0      // Id of this node
+#define AUTH_KEY 0x01 // Shared secret key to authenticate nodes
+#define NODE_ID 0     // Id of this node
 #define MAX_CAPACITY_PACKETS 10
 #define MSG_TYPE_REQ_FORWARD_NODE 10
 #define MSG_TYPE_RES_FORWARD_NODE 14
@@ -30,36 +30,41 @@ RH_RF95 rf95(RFM95_CS, RFM95_INT);
 #define MSG_TYPE_ACK_SUCCEED 4
 #define MSG_TYPE_ACK_FAILURE 5
 
-struct Node {
+struct Node
+{
   uint8_t nodeId;
 };
 
-struct NodePacket {
+struct NodePacket
+{
   Node node;
-  uint8_t authKey;
 };
 
-struct CapacityPacket {
-  Node alertNode;  // the root node that sends alert
+struct CapacityPacket
+{
+  Node alertNode; // the root node that sends alert
   Node senderNode;
   Node receiverNode;
-  uint8_t authKey;
   uint8_t binCapacity;
 };
 
-struct AckPacket {
-  Node alertNode;  // the root node that sends alert
+struct AckPacket
+{
+  Node alertNode; // the root node that sends alert
   Node receiverNode;
   uint8_t authKey;
   uint8_t msgType;
 };
 
-union PacketData {
+union PacketData
+{
   NodePacket nodePacket;
   CapacityPacket capacityPacket;
 };
 
-struct Packet {
+struct Packet
+{
+  uint8_t authKey;
   uint8_t msgType;
   PacketData data;
 };

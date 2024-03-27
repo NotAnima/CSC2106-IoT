@@ -145,7 +145,7 @@ void remove_from_routing_table()
 void setup_routing_table()
 {
   // take nodeid 0 as sever node
-  add_to_routing_table(0);
+  add_to_routing_table(1);
 }
 
 void print_routing_table()
@@ -305,9 +305,9 @@ void forward_node_packet()
   uint8_t ackMessage = MSG_TYPE_ACK_FAILURE;
 
   unsigned long startTime = millis();
-  unsigned long timeout = 15000; // 15 seconds timeout
+  unsigned long timeout = 15000; // 5 seconds timeout
 
-  // Check within 15 seconds if there is reply to add node to routing table
+  // Check within 5 seconds if there is reply to add node to routing table
   while ((millis() - startTime) <= timeout)
   {
     if (rf95.waitAvailableTimeout(2000))
@@ -316,7 +316,7 @@ void forward_node_packet()
 
       if (rf95.recv((uint8_t *)&packet, sizeof(packet)))
       {
-        if (packet.authKey == AUTH_KEY && packet.msgType == MSG_TYPE_RES_FORWARD_NODE && packet.data.nodePacket.node.nodeId == 0)
+        if (packet.authKey == AUTH_KEY && packet.msgType == MSG_TYPE_RES_FORWARD_NODE && packet.data.nodePacket.node.nodeId == 1)
         {
           Serial.println("RESPONSE: Node's acknowledgement as forwarding node");
           add_to_routing_table(packet.data.nodePacket.node.nodeId);
