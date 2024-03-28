@@ -9,14 +9,19 @@ WiFiUDP udp;
 const unsigned int udpPort = 4210; // UDP port for communication
 
 // Replace with actual network credentials
-const char* ssid = "10-100";
-const char* password = "10100240";
+const char* ssid = "SSID";
+const char* password = "PASS";
+
+// Global variable to keep track of hops
+unsigned int hops = 0;
 
 struct RoutingTableEntry {
   String nodeID;
   String ip;
   String mac;
+  unsigned long timestamp; // Timestamp for the last received ping
 };
+
 
 struct NodePacket {
   String rootSender;    // Original sender of the packet
@@ -90,43 +95,25 @@ void displayNodeHistorySerial() {
   }
 }
 
-// Updates the routing table with the given node ID, IP, and MAC address.
-// If the node ID already exists in the table, updates its IP and MAC; otherwise, adds a new entry.
-void updateRoutingTable(String nodeID, String ip, String mac) {
+// Time threshold for removing nodes from routing table (in milliseconds)
+const unsigned long pingTimeout = 10000; // 10 seconds
+
+// Updates the routing table with the given node ID, IP, MAC address, and timestamp.
+// If the node ID already exists in the table, updates its IP, MAC, and timestamp; otherwise, adds a new entry.
+void updateRoutingTable(String nodeID, String ip, String mac, unsigned long timestamp) {
   if (nodeID != WiFi.macAddress()) { // Exclude device's own IP & MAC
     for (auto& entry : routingTable) {
       if (entry.nodeID == nodeID) {
         entry.ip = ip;
         entry.mac = mac;
+        entry.timestamp = timestamp; // Update timestamp
         return;
       }
     }
-    RoutingTableEntry newEntry = {nodeID, ip, mac};
+    RoutingTableEntry newEntry = {nodeID, ip, mac, timestamp};
     routingTable.push_back(newEntry);
   }
 }
-
-// Appends the given node ID to the node history vector, recording the sequence of nodes involved in packet transmission.
-// This operation is crucial for tracking the path of data packets through the network, aiding in debugging and analysis.
-// void updateNodeHistory(String nodeID) {
-//   nodeHistory.push_back(nodeID);
-// }
-
-// // Constructs and sends a node packet containing information about the root sender, sender node, receiver node, and bin capacity.
-// // The packet is serialized into a JSON string for transmission.
-// void sendNodePacket(const NodePacket& packet) {
-//   StaticJsonDocument<200> doc;
-//   doc["rootSender"] = packet.rootSender;
-//   doc["senderNode"] = packet.senderNode;
-//   doc["receiverNode"] = packet.receiverNode;
-//   doc["binCapacity"] = packet.binCapacity;
-//   String output;
-//   serializeJson(doc, output);
-
-//   // TODO: Add code to send 'output' to the receiver node via WiFi
-
-//   Serial.println("Sending Node Packet: " + output);
-// }
 
 void sendPing() {
   StaticJsonDocument<200> doc;
@@ -142,6 +129,18 @@ void sendPing() {
   udp.beginPacket(broadcastIp, udpPort);
   udp.write((const uint8_t *)output.c_str(), output.length());
   udp.endPacket();
+}
+
+// Removes nodes from the routing table where the time since the last ping exceeds the ping timeout threshold.
+void removeInactiveNodes() {
+  unsigned long currentMillis = millis();
+  for (auto it = routingTable.begin(); it != routingTable.end();) {
+    if (currentMillis - it->timestamp >= pingTimeout) {
+      it = routingTable.erase(it);
+    } else {
+      ++it;
+    }
+  }
 }
 
 void receivePing() {
@@ -175,12 +174,101 @@ void receivePing() {
       udp.beginPacket(responderIP, udpPort);
       udp.write((const uint8_t*)ackMsg.c_str(), ackMsg.length());
       udp.endPacket();
-    } else if (action == "ack") {
-      String responderIP = udp.remoteIP().toString();
-      String responderMAC = doc["mac"];
-      String nodeIDStr = doc["nodeID"]; // Using the MAC address string directly
-      
-      updateRoutingTable(nodeIDStr, responderIP, responderMAC);
+
+      // Update or add entry in routing table with current timestamp
+      updateRoutingTable(doc["senderNode"].as<String>(), responderIP.toString(), WiFi.macAddress(), millis());
+    }
+  }
+}
+
+void sendAck(const String& originalSender) {
+  StaticJsonDocument<256> ackDoc;
+  ackDoc["action"] = "ack";
+  ackDoc["to"] = originalSender;
+  ackDoc["from"] = WiFi.localIP();
+  ackDoc["message"] = "Packet received at server";
+  String ackMsg;
+  serializeJson(ackDoc, ackMsg);
+
+  IPAddress senderIp;
+  // Assuming originalSender can be directly converted to IP, in real scenarios, a lookup would be required
+  senderIp.fromString(originalSender);
+  udp.beginPacket(senderIp, udpPort);
+  udp.write((const uint8_t *)ackMsg.c_str(), ackMsg.length());
+  udp.endPacket();
+
+  Serial.println("ACK Sent: " + ackMsg);
+}
+
+void sendPacket() {
+  if (routingTable.empty()) return; // Ensure there's at least one node in the routing table
+
+  NodePacket packet = {
+    WiFi.localIP().toString(), // rootSender
+    WiFi.localIP().toString(), // senderNode
+    routingTable[0].ip, // receiverNode - sending to the first node in the routing table
+    0.75, // binCapacity - example capacity, replace with actual sensor data
+    millis() // rootTimestampSent
+  };
+
+  StaticJsonDocument<256> doc;
+  doc["rootSender"] = packet.rootSender;
+  doc["senderNode"] = packet.senderNode;
+  doc["receiverNode"] = packet.receiverNode;
+  doc["binCapacity"] = packet.binCapacity;
+  doc["rootTimestampSent"] = packet.rootTimestampSent;
+  String output;
+  serializeJson(doc, output);
+
+  IPAddress receiverIp;
+  receiverIp.fromString(packet.receiverNode);
+  udp.beginPacket(receiverIp, udpPort);
+  udp.write((const uint8_t *)output.c_str(), output.length());
+  udp.endPacket();
+
+  Serial.println("Packet Sent: " + output);
+}
+
+void receivePacket() {
+  int packetSize = udp.parsePacket();
+  if (packetSize) {
+    char packetBuffer[255];
+    int len = udp.read(packetBuffer, 255);
+    if (len > 0) packetBuffer[len] = '\0';
+
+    StaticJsonDocument<256> doc;
+    DeserializationError error = deserializeJson(doc, packetBuffer);
+    if (error) {
+      Serial.print(F("deserializeJson() failed: "));
+      Serial.println(error.f_str());
+      return;
+    }
+
+    if (doc.containsKey("action") && doc["action"].as<String>() == "ack") {
+      // Handling ACK message
+      Serial.println("ACK Received: " + String(packetBuffer));
+      return; // Do not process further if it's an ACK message
+    }
+
+    Serial.println("Packet Received: " + String(packetBuffer));
+    hops++;
+
+    if (hops >= 2) {
+      // Assuming packet reached the server after 2 hops
+      String originalSender = doc["rootSender"].as<String>();
+      sendAck(originalSender);
+      hops = 0; // Reset hops for next message
+    } else {
+      NodePacket receivedPacket = {
+        doc["rootSender"].as<String>(),
+        WiFi.localIP().toString(), // Updating senderNode to current node
+        routingTable.empty() ? String("") : routingTable[0].ip, // Setting receiverNode to first node in the routing table
+        doc["binCapacity"].as<float>(),
+        doc["rootTimestampSent"].as<unsigned long>()
+      };
+
+      // Forward the updated packet if not reached the server
+      sendPacket();
     }
   }
 }
@@ -189,18 +277,36 @@ void setup() {
   setupWiFi();
 }
 
+void timedSendPacket() {
+  static unsigned long lastSendTime = 0;
+  unsigned long currentMillis = millis();
+  if (currentMillis - lastSendTime >= 10000) { // 10 seconds
+    lastSendTime = currentMillis;
+    sendPacket();
+  }
+}
+
+
 unsigned long lastDisplayUpdate = 0;
 const long displayInterval = 5000; // Update the display every 5000 milliseconds (5 seconds)
+unsigned long lastRoutingTableCheck = 0; // Variable to track the last time routing table was checked
 
 void loop() {
   unsigned long currentMillis = millis();
 
-  sendPing(); 
+  sendPing();
   receivePing();
+  receivePacket();
+  timedSendPacket();
 
   if (currentMillis - lastDisplayUpdate >= displayInterval) {
     lastDisplayUpdate = currentMillis;
-    displayInfo(); // Combined display function
+    displayInfo();
+  }
+
+  // Check and remove inactive nodes from routing table every 10 seconds
+  if (currentMillis - lastRoutingTableCheck >= 10000) { // 10 seconds
+    lastRoutingTableCheck = currentMillis;
+    removeInactiveNodes();
   }
 }
-
