@@ -2,23 +2,28 @@
 #include <WiFi.h>
 #include <vector>
 #include <ArduinoJson.h>
+#include <WiFiUdp.h>
+
+// Global UDP object
+WiFiUDP udp;
+const unsigned int udpPort = 4210; // UDP port for communication
 
 // Replace with actual network credentials
-const char* ssid = "wifissid";
-const char* password = "password";
+const char* ssid = "10-100";
+const char* password = "10100240";
 
 struct RoutingTableEntry {
-  int nodeID;
+  String nodeID;
   String ip;
   String mac;
 };
 
 struct NodePacket {
-  int rootSender;
-  int senderNode;
-  int receiverNode;
-  float binCapacity;
-  long rootTimestampSent;
+  String rootSender;    // Original sender of the packet
+  String senderNode;    // Current sender of the packet
+  String receiverNode;  // Next receiver of the packet
+  float binCapacity;    // Capacity of the bin
+  unsigned long rootTimestampSent; // Timestamp when the packet was originally sent
 };
 
 // A dynamic array of RoutingTableEntry objects, used to store and manage routing information.
@@ -45,18 +50,24 @@ Serial.print("Start WiFi ..");
   M5.Lcd.setCursor(0, 20, 2);
   M5.Lcd.print("IP: ");
   M5.Lcd.println(WiFi.localIP());
+
+  // Initialize UDP
+  udp.begin(udpPort);
+
 }
 
-// Function to display routing table on the M5StickC Plus LCD
-void displayRoutingTable() {
+// Function to display info
+void displayInfo() {
+  M5.Lcd.fillScreen(BLACK);
+  M5.Lcd.setCursor(0, 0, 2);
+  M5.Lcd.print("IP: ");
+  M5.Lcd.println(WiFi.localIP());
+
   M5.Lcd.println("Routing Table:");
   for (auto& entry : routingTable) {
     M5.Lcd.printf("ID: %d, IP: %s, MAC: %s\n", entry.nodeID, entry.ip.c_str(), entry.mac.c_str());
   }
-}
 
-// Function to display node history on the M5StickC Plus LCD
-void displayNodeHistory() {
   M5.Lcd.println("Node History:");
   for (int nodeId : nodeHistory) {
     M5.Lcd.printf("Node ID: %d\n", nodeId);
@@ -81,79 +92,115 @@ void displayNodeHistorySerial() {
 
 // Updates the routing table with the given node ID, IP, and MAC address.
 // If the node ID already exists in the table, updates its IP and MAC; otherwise, adds a new entry.
-void updateRoutingTable(int nodeID, String ip, String mac) {
-  for (auto& entry : routingTable) {
-    if (entry.nodeID == nodeID) {
-      entry.ip = ip;
-      entry.mac = mac;
-      return;
+void updateRoutingTable(String nodeID, String ip, String mac) {
+  if (nodeID != WiFi.macAddress()) { // Exclude device's own IP & MAC
+    for (auto& entry : routingTable) {
+      if (entry.nodeID == nodeID) {
+        entry.ip = ip;
+        entry.mac = mac;
+        return;
+      }
     }
+    RoutingTableEntry newEntry = {nodeID, ip, mac};
+    routingTable.push_back(newEntry);
   }
-  RoutingTableEntry newEntry = {nodeID, ip, mac};
-  routingTable.push_back(newEntry);
 }
 
 // Appends the given node ID to the node history vector, recording the sequence of nodes involved in packet transmission.
 // This operation is crucial for tracking the path of data packets through the network, aiding in debugging and analysis.
-void updateNodeHistory(int nodeID) {
-  nodeHistory.push_back(nodeID);
-}
+// void updateNodeHistory(String nodeID) {
+//   nodeHistory.push_back(nodeID);
+// }
 
-// Constructs and sends a node packet containing information about the root sender, sender node, receiver node, and bin capacity.
-// The packet is serialized into a JSON string for transmission.
-void sendNodePacket(const NodePacket& packet) {
+// // Constructs and sends a node packet containing information about the root sender, sender node, receiver node, and bin capacity.
+// // The packet is serialized into a JSON string for transmission.
+// void sendNodePacket(const NodePacket& packet) {
+//   StaticJsonDocument<200> doc;
+//   doc["rootSender"] = packet.rootSender;
+//   doc["senderNode"] = packet.senderNode;
+//   doc["receiverNode"] = packet.receiverNode;
+//   doc["binCapacity"] = packet.binCapacity;
+//   String output;
+//   serializeJson(doc, output);
+
+//   // TODO: Add code to send 'output' to the receiver node via WiFi
+
+//   Serial.println("Sending Node Packet: " + output);
+// }
+
+void sendPing() {
   StaticJsonDocument<200> doc;
-  doc["rootSender"] = packet.rootSender;
-  doc["senderNode"] = packet.senderNode;
-  doc["receiverNode"] = packet.receiverNode;
-  doc["binCapacity"] = packet.binCapacity;
+  doc["action"] = "ping";
+  // Assuming a unique identifier for each M5StickC Plus device
+  doc["senderNode"] = WiFi.macAddress(); 
   String output;
   serializeJson(doc, output);
+  
+  // Broadcast address for the subnet (modify according to your network configuration)
+  IPAddress broadcastIp(192, 168, 50, 255); 
 
-  // TODO: Add code to send 'output' to the receiver node via WiFi
+  udp.beginPacket(broadcastIp, udpPort);
+  udp.write((const uint8_t *)output.c_str(), output.length());
+  udp.endPacket();
+}
 
-  Serial.println("Sending Node Packet: " + output);
+void receivePing() {
+  int packetSize = udp.parsePacket();
+  if (packetSize) {
+    char packetBuffer[255];
+    int len = udp.read(packetBuffer, 255);
+    if (len > 0) {
+      packetBuffer[len] = '\0';
+    }
+    String data(packetBuffer);
+    StaticJsonDocument<200> doc;
+    DeserializationError error = deserializeJson(doc, data);
+    if (error) {
+      Serial.print(F("deserializeJson() failed: "));
+      Serial.println(error.f_str());
+      return;
+    }
+    
+    String action = doc["action"];
+    if (action == "ping") {
+      StaticJsonDocument<200> ackDoc;
+      ackDoc["action"] = "ack";
+      ackDoc["nodeID"] = WiFi.macAddress(); // Using MAC address directly
+      ackDoc["ip"] = WiFi.localIP().toString();
+      ackDoc["mac"] = WiFi.macAddress();
+      String ackMsg;
+      serializeJson(ackDoc, ackMsg);
+
+      IPAddress responderIP = udp.remoteIP();
+      udp.beginPacket(responderIP, udpPort);
+      udp.write((const uint8_t*)ackMsg.c_str(), ackMsg.length());
+      udp.endPacket();
+    } else if (action == "ack") {
+      String responderIP = udp.remoteIP().toString();
+      String responderMAC = doc["mac"];
+      String nodeIDStr = doc["nodeID"]; // Using the MAC address string directly
+      
+      updateRoutingTable(nodeIDStr, responderIP, responderMAC);
+    }
+  }
 }
 
 void setup() {
   setupWiFi();
-  // Setup other initialisations if necessary
-  // Dummy data
-  updateRoutingTable(1, "192.168.1.2", "AA:BB:CC:DD:EE:01");
-  updateRoutingTable(2, "192.168.1.3", "AA:BB:CC:DD:EE:02");
-  updateNodeHistory(1);
-  updateNodeHistory(2);
 }
 
-// Example usage of sending a node packet.
-// This demonstrates how to create and send a packet with example data.
-void loop() {
-  static unsigned long lastUpdateTime = 0;
-  const long updateInterval = 10000; // Update interval set to 10 seconds
+unsigned long lastDisplayUpdate = 0;
+const long displayInterval = 5000; // Update the display every 5000 milliseconds (5 seconds)
 
-  // Current time in milliseconds
+void loop() {
   unsigned long currentMillis = millis();
 
-  // Check if it's time to update the routing table
-  if (currentMillis - lastUpdateTime >= updateInterval) {
-    lastUpdateTime = currentMillis;
+  sendPing(); 
+  receivePing();
 
-    // Add a new dummy node to the routingTable
-    int newNodeID = routingTable.size() + 1;
-    String newIP = "192.168.1." + String(newNodeID + 1);
-    String newMAC = "AA:BB:CC:DD:EE:" + String(newNodeID, HEX);
-    updateRoutingTable(newNodeID, newIP, newMAC);
-
-    // Update and display routing table on LCD and serial monitor
-    displayRoutingTable();
-    displayRoutingTableSerial();
+  if (currentMillis - lastDisplayUpdate >= displayInterval) {
+    lastDisplayUpdate = currentMillis;
+    displayInfo(); // Combined display function
   }
-
-  // Existing logic for node packet transmission
-  NodePacket examplePacket = {1, 2, 3, 0.9};
-  sendNodePacket(examplePacket);
-  
-  // Use a delay for demonstration; consider a non-blocking approach for real applications
-  delay(10000);
 }
 
