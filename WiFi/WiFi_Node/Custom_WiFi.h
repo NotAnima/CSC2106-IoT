@@ -111,7 +111,7 @@ void sendPing() {
   IPAddress broadcastIp = WiFi.gatewayIP(); // Get the gateway IP
   broadcastIp[3] = 255; // Convert to the broadcast IP
   Serial.println(broadcastIp);
-  // Broadcast address for the subnet (modify according to your network configuration)
+  // Broadcast address for the subnet
   // use the gateway ip later 
   udp.beginPacket(broadcastIp, udpPort);
   udp.write((const uint8_t *)output.c_str(), output.length());
