@@ -79,7 +79,7 @@ void displayInfo() {
 
   M5.Lcd.println("Node History:");
   int startIndex = (nodeHistory.size() > 5) ? nodeHistory.size() - 5 : 0;
-  for (int i = startIndex; i < nodeHistory.size(); i++) {
+  for (int i = nodeHistory.size() - 1; i >= startIndex; i--) {
     M5.Lcd.printf("%s: %s\%\n", nodeHistory[i].rootIP.c_str(), nodeHistory[i].binInfo.c_str());
   }
 }
