@@ -6,7 +6,7 @@
 #include <ArduinoJson.h>
 #include <WiFiUdp.h>
 
-
+void sendAck(const String& originalSender);
 // Global UDP object
 WiFiUDP udp;
 const unsigned int udpPort = 4210; // UDP port for communication
@@ -43,6 +43,10 @@ struct NodePacket {
   unsigned long rootTimestampSent; // Timestamp when the packet was originally sent
 };
 
+struct dustbin_info{
+  String rootIP;
+  String binInfo;
+};
 // A dynamic array of RoutingTableEntry objects, used to store and manage routing information.
 // Each entry contains a node ID, its IP address, and MAC address.
 // This vector allows for efficient addition and removal of routing entries as the network topology changes.
@@ -50,7 +54,7 @@ std::vector<RoutingTableEntry> routingTable;
 
 // A dynamic array of integers, representing the sequence of node IDs involved in packet transmission.
 // This vector is used to track the path of data packets through the network, facilitating debugging and analysis.
-std::vector<int> nodeHistory;
+std::vector<dustbin_info> nodeHistory;
 
 float getBinCapacity(){
   if(binCapacity >= 100)
@@ -68,14 +72,15 @@ void displayInfo() {
   M5.Lcd.print("IP: ");
   M5.Lcd.println(WiFi.localIP());
 
-  M5.Lcd.println("Routing Table:");
+  M5.Lcd.println("RT:");
   for (auto& entry : routingTable) {
-    M5.Lcd.printf("ID: %d, IP: %s, MAC: %s, isOn: %d\n", entry.nodeID, entry.ip.c_str(), entry.mac.c_str(), entry.isOn);
+    M5.Lcd.printf("IP: %s isOn: %s\n", entry.ip.c_str(), entry.isOn? "True":"False");
   }
 
   M5.Lcd.println("Node History:");
-  for (int nodeId : nodeHistory) {
-    M5.Lcd.printf("Node ID: %d\n", nodeId);
+  int startIndex = (nodeHistory.size() > 5) ? nodeHistory.size() - 5 : 0;
+  for (int i = startIndex; i < nodeHistory.size(); i++) {
+    M5.Lcd.printf("%s: %s\%\n", nodeHistory[i].rootIP.c_str(), nodeHistory[i].binInfo.c_str());
   }
 }
 
@@ -90,8 +95,8 @@ void displayRoutingTableSerial() {
 // Function to display node history on the Serial Monitor
 void displayNodeHistorySerial() {
   Serial.println("Node History:");
-  for (int nodeId : nodeHistory) {
-    Serial.printf("Node ID: %d\n", nodeId);
+  for (auto &info : nodeHistory) {
+    Serial.printf("%s: %s\%\n", info.rootIP.c_str(), info.binInfo.c_str());
   }
 }
 
@@ -104,7 +109,7 @@ void updateRoutingTable(String nodeID, String ip, String mac, unsigned long time
         entry.ip = ip;
         entry.mac = mac;
         entry.isOn = true;
-        entry.timestamp = timestamp; // Update timestamp
+        entry.timestamp = timestamp;
         return;
       }
     }
@@ -113,11 +118,18 @@ void updateRoutingTable(String nodeID, String ip, String mac, unsigned long time
   }
 }
 
+void updateHistory(String ipAddress, String binInfo) {
+    dustbin_info newInfo = {ipAddress, binInfo};
+    nodeHistory.push_back(newInfo);
+}
+
+
 void sendPing() {
   JsonDocument doc;
   doc["action"] = "ping";
-  // Assuming a unique identifier for each M5StickC Plus device
+  // Assuming a unique identifier for each node
   doc["senderNode"] = WiFi.macAddress(); 
+  doc["server"] = true;
   String output;
   serializeJson(doc, output);
 
@@ -135,46 +147,51 @@ void markInactiveNodesAsOff() {
   for (auto& entry : routingTable) {
       if ( (currentMillis - entry.timestamp) >= pingTimeout) {
         entry.isOn = false;
-        Serial.printf("Looking at node ID: %s\n", entry.nodeID);
       }
     }
 }
 
-void receivePing(JsonDocument doc) {
-  // int packetSize = udp.parsePacket();
-  // Serial.println("Packet size is: "+ packetSize);
-  // if (packetSize) {
-  //   char packetBuffer[255];
-  //   int len = udp.read(packetBuffer, 255);
-  //   if (len > 0) {
-  //     packetBuffer[len] = '\0';
-  //   }
-  //   String data(packetBuffer);
-  //   JsonDocument doc;
+void receivePing() {
+  int packetSize = udp.parsePacket();
+  if (packetSize) {
+    char packetBuffer[255];
+    int len = udp.read(packetBuffer, 255);
+    if (len > 0) {
+      packetBuffer[len] = '\0';
+    }
+    String data(packetBuffer);
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, data);
+
+    // handle incorrectly parsed json data
     if (error) {
-      Serial.print(F("deserializeJson() failed: "));
-      Serial.println(error.f_str());
       return;
     }
     
     String action = doc["action"];
     if (action == "ping") {
-      JsonDocument ackDoc;
-      ackDoc["action"] = "ack";
-      ackDoc["nodeID"] = WiFi.macAddress(); // Using MAC address directly
-      ackDoc["ip"] = WiFi.localIP().toString();
-      ackDoc["mac"] = WiFi.macAddress();
-      String ackMsg;
-      serializeJson(ackDoc, ackMsg);
-
+      // handle updating of the routing table
       IPAddress responderIP = udp.remoteIP();
-      udp.beginPacket(responderIP, udpPort);
-      udp.write((const uint8_t*)ackMsg.c_str(), ackMsg.length());
-      udp.endPacket();
+      updateRoutingTable(doc["senderNode"].as<String>(), udp.remoteIP().toString(), WiFi.macAddress(), millis());
+    }
+    else if (doc.containsKey("action") && doc["action"].as<String>() == "data") {
+      // Handling ACK message
+      String originalSender = doc["rootSender"].as<String>();
+      displayInfo();
+      float binData = doc["binCapacity"].as<float>();
+      Serial.printf("Dustbin data on: %s is about %.2f percent full now\n", doc["rootSender"].as<String>(), binData);
+      sendAck(originalSender);
 
-      // Update or add entry in routing table with current timestamp
-      updateRoutingTable(doc["senderNode"].as<String>(), responderIP.toString(), WiFi.macAddress(), millis());
+      // convert the bindata into a 2 decimal string
+      String binInfo = doc["rootTimestampSent"].as<String>() + "@ " + String(binData, 2);
+                        /* If possible change to AM/PM using NTP */
+      updateHistory(doc["rootSender"].as<String>(), binInfo);
+      return;
+    }
+    else if (doc.containsKey("action") && doc["action"].as<String>() == "ack"){
+      // do nothing if ack
+      Serial.println("ACK received, dropping packet");
+      return;
     }
   }
 }
@@ -185,6 +202,7 @@ void sendAck(const String& originalSender) {
   ackDoc["to"] = originalSender;
   ackDoc["from"] = WiFi.localIP();
   ackDoc["message"] = "Packet received at server";
+  ackDoc["server"] = true;
   String ackMsg;
   serializeJson(ackDoc, ackMsg);
 
@@ -197,77 +215,6 @@ void sendAck(const String& originalSender) {
 
   Serial.println("ACK Sent: " + ackMsg);
 }
-
-// void sendPacket() {
-//   if (routingTable.empty()) return; // Ensure there's at least one node in the routing table
-
-//   binCapacity = getBinCapacity();
-//   NodePacket packet = {
-//     WiFi.localIP().toString(), // rootSender
-//     WiFi.localIP().toString(), // senderNode
-//     routingTable[0].ip, // receiverNode - sending to the first node in the routing table
-//     binCapacity, // binCapacity - example capacity, replace with actual sensor data
-//     millis() // rootTimestampSent
-//   };
-
-//   JsonDocument doc;
-//   doc["rootSender"] = packet.rootSender;
-//   doc["senderNode"] = packet.senderNode;
-//   doc["receiverNode"] = packet.receiverNode;
-//   doc["binCapacity"] = packet.binCapacity;
-//   doc["rootTimestampSent"] = packet.rootTimestampSent;
-//   String output;
-//   serializeJson(doc, output);
-
-//   IPAddress receiverIp;
-//   receiverIp.fromString(packet.receiverNode);
-//   udp.beginPacket(receiverIp, udpPort);
-//   udp.write((const uint8_t *)output.c_str(), output.length());
-//   udp.endPacket();
-
-//   Serial.println("Packet Sent: " + output);
-// }
-
-void receivePacket() {
-  int packetSize = udp.parsePacket();
-  if (packetSize) {
-    char packetBuffer[255];
-    int len = udp.read(packetBuffer, 255);
-    if (len > 0) packetBuffer[len] = '\0';
-
-    JsonDocument doc;
-    DeserializationError error = deserializeJson(doc, packetBuffer);
-    if (error) {
-      Serial.print(F("deserializeJson() failed: "));
-      Serial.println(error.f_str());
-      return;
-    }
-    else if (doc.containsKey("action") && doc["action"].as<String>() == "data") {
-      // Handling ACK message
-      String originalSender = doc["rootSender"].as<String>();
-      sendAck(originalSender);
-
-      Serial.println("ACK Received: " + String(packetBuffer));
-      return; // Do not process further if it's an ACK message
-    }
-    else
-    {
-      receivePing(doc);
-    }
-    
-    // Set display packet doc['binCapabity']....
-    }
-  
-}
-
-// void timedSendPacket() {
-//   static unsigned long lastSendTime = 0;
-//   unsigned long currentMillis = millis();
-//   if (currentMillis - lastSendTime >= 10000) { // 10 seconds
-//     lastSendTime = currentMillis;
-//     sendPacket();
-//   }
-// }
 
 
 

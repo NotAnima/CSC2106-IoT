@@ -31,13 +31,15 @@ void setup() {
 
 void loop() {
   unsigned long currentMillis = millis();
-
   sendPing();
   receivePing();
-  receivePacket();
+  // receivePacket();
   // timedSendPacket();
 
-  if (currentMillis - lastDisplayUpdate >= displayInterval) {lastDisplayUpdate = currentMillis; displayInfo();}
+  if (currentMillis - lastDisplayUpdate >= displayInterval) {
+    lastDisplayUpdate = currentMillis; 
+    displayInfo();
+    }
   
 
   // Check and mark inactive nodes from routing table every 10 seconds
@@ -45,4 +47,6 @@ void loop() {
     lastRoutingTableCheck = currentMillis;
     markInactiveNodesAsOff();
   }
+
+  delay(1000);
 }
