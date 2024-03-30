@@ -11,8 +11,8 @@ WiFiUDP udp;
 const unsigned int udpPort = 4210; // UDP port for communication
 
 // Replace with actual network credentials
-const char* ssid = "wifi_name";
-const char* password = "wifi_password";
+const char* ssid = "ssid";
+const char* password = "password";
 
 unsigned long lastDisplayUpdate = 0;
 const long displayInterval = 5000; // Update the display every 5000 milliseconds (5 seconds)
@@ -65,6 +65,8 @@ void displayInfo() {
   M5.Lcd.setCursor(0, 0, 2);
   M5.Lcd.print("IP: ");
   M5.Lcd.println(WiFi.localIP());
+  M5.Lcd.print("MAC: ");
+  M5.Lcd.println(WiFi.macAddress());
 
   M5.Lcd.println("Routing Table:");
   for (auto& entry : routingTable) {
@@ -101,7 +103,7 @@ void updateRoutingTable(String nodeID, String ip, String mac, unsigned long time
       if (entry.nodeID == nodeID) {
         entry.ip = ip;
         entry.mac = mac;
-        entry.timestamp = timestamp; // Update timestamp
+        entry.timestamp = timestamp;
         return;
       }
     }
@@ -114,7 +116,7 @@ void sendPing() {
   JsonDocument doc;
   doc["action"] = "ping";
   // Assuming a unique identifier for each M5StickC Plus device
-  doc["senderNode"] = WiFi.macAddress(); 
+  doc["senderNode"] = WiFi.macAddress();
   String output;
   serializeJson(doc, output);
 
@@ -140,7 +142,6 @@ void removeInactiveNodes() {
 
 void receivePing() {
   int packetSize = udp.parsePacket();
-  Serial.println("Packet size is: "+ packetSize);
   if (packetSize) {
     char packetBuffer[255];
     int len = udp.read(packetBuffer, 255);
@@ -150,61 +151,56 @@ void receivePing() {
     String data(packetBuffer);
     JsonDocument doc;
     DeserializationError error = deserializeJson(doc, data);
-    if (error) {
-      Serial.print(F("deserializeJson() failed: "));
-      Serial.println(error.f_str());
-      return;
-    }
-    
-    String action = doc["action"];
-    if (action == "ping") {
-      JsonDocument ackDoc;
-      ackDoc["action"] = "ack";
-      ackDoc["nodeID"] = WiFi.macAddress(); // Using MAC address directly
-      ackDoc["ip"] = WiFi.localIP().toString();
-      ackDoc["mac"] = WiFi.macAddress();
-      String ackMsg;
-      serializeJson(ackDoc, ackMsg);
+    if (!error) {
+      String action = doc["action"];
+      if (action == "ping") {
+        String senderMAC = doc["senderNode"]; // Retrieve sender's MAC address from the packet
+        IPAddress responderIP = udp.remoteIP();
 
-      IPAddress responderIP = udp.remoteIP();
-      udp.beginPacket(responderIP, udpPort);
-      udp.write((const uint8_t*)ackMsg.c_str(), ackMsg.length());
-      udp.endPacket();
+        JsonDocument ackDoc;
+        ackDoc["action"] = "ack";
+        ackDoc["nodeID"] = WiFi.macAddress(); 
+        ackDoc["ip"] = WiFi.localIP().toString();
+        ackDoc["mac"] = WiFi.macAddress();
+        String ackMsg;
+        serializeJson(ackDoc, ackMsg);
 
-      // Update or add entry in routing table with current timestamp
-      updateRoutingTable(doc["senderNode"].as<String>(), responderIP.toString(), WiFi.macAddress(), millis());
+        udp.beginPacket(responderIP, udpPort);
+        udp.write((const uint8_t*)ackMsg.c_str(), ackMsg.length());
+        udp.endPacket();
+
+        updateRoutingTable(senderMAC, responderIP.toString(), senderMAC, millis());
+      }
     }
   }
-}
-
-void sendAck(const String& originalSender) {
-  JsonDocument ackDoc;
-  ackDoc["action"] = "ack";
-  ackDoc["to"] = originalSender;
-  ackDoc["from"] = WiFi.localIP();
-  ackDoc["message"] = "Packet received at server";
-  String ackMsg;
-  serializeJson(ackDoc, ackMsg);
-
-  IPAddress senderIp;
-  // Assuming originalSender can be directly converted to IP, in real scenarios, a lookup would be required
-  senderIp.fromString(originalSender);
-  udp.beginPacket(senderIp, udpPort);
-  udp.write((const uint8_t *)ackMsg.c_str(), ackMsg.length());
-  udp.endPacket();
-
-  Serial.println("ACK Sent: " + ackMsg);
 }
 
 void sendPacket() {
   if (routingTable.empty()) return; // Ensure there's at least one node in the routing table
 
+  String serverMac = "4C:75:25:CB:89:5C"; // Server MAC address to look for
+  String serverIp; // Variable to store server IP address
+
+  // Find the server IP address based on its MAC
+  for (const auto& entry : routingTable) {
+    if (entry.mac.equalsIgnoreCase(serverMac)) {
+      serverIp = entry.ip;
+      break;
+    }
+  }
+
+  // If server IP is not found, do not proceed
+  if (serverIp.isEmpty()) {
+    Serial.println("Server IP not found in routing table.");
+    return;
+  }
+
   binCapacity = getBinCapacity();
   NodePacket packet = {
     WiFi.localIP().toString(), // rootSender
     WiFi.localIP().toString(), // senderNode
-    routingTable[0].ip, // receiverNode - sending to the first node in the routing table
-    binCapacity, // binCapacity - example capacity, replace with actual sensor data
+    serverIp, // receiverNode - send to the server IP
+    binCapacity, // binCapacity
     millis() // rootTimestampSent
   };
 
@@ -224,7 +220,7 @@ void sendPacket() {
   udp.write((const uint8_t *)output.c_str(), output.length());
   udp.endPacket();
 
-  Serial.println("Packet Sent: " + output);
+  Serial.println("Packet Sent to Server: " + output);
 }
 
 void receivePacket() {
@@ -249,37 +245,35 @@ void receivePacket() {
     }
 
     Serial.println("Packet Received: " + String(packetBuffer));
-    hops++;
 
-    // if (hops >= 2) {
-    //   // Assuming packet reached the server after 2 hops
-    //   String originalSender = doc["rootSender"].as<String>();
-    //   sendAck(originalSender);
-    //   hops = 0; // Reset hops for next message
-    // } else {
-      NodePacket receivedPacket = {
-        doc["rootSender"].as<String>(),
-        WiFi.localIP().toString(), // Updating senderNode to current node
-        routingTable.empty() ? String("") : routingTable[0].ip, // Setting receiverNode to first node in the routing table
-        doc["binCapacity"].as<float>(),
-        doc["rootTimestampSent"].as<unsigned long>()
-      };
+    String serverMac = "4C:75:25:CB:89:5C"; // Server MAC address to look for
+    String serverIp; // Variable to store server IP address
 
-      // Forward the updated packet if not reached the server
-      sendPacket();
-    // }
-  }
-}
+    // Find the server IP address based on its MAC
+    for (const auto& entry : routingTable) {
+      if (entry.mac.equalsIgnoreCase(serverMac)) {
+        serverIp = entry.ip;
+        break;
+      }
+    }
 
-void timedSendPacket() {
-  static unsigned long lastSendTime = 0;
-  unsigned long currentMillis = millis();
-  if (currentMillis - lastSendTime >= 10000) { // 10 seconds
-    lastSendTime = currentMillis;
+    // If server IP is not found, use an empty string (which should ideally never happen in this setup)
+    if (serverIp.isEmpty()) {
+      Serial.println("Server IP not found in routing table.");
+      serverIp = String(""); // Use an empty string as fallback
+    }
+
+    NodePacket receivedPacket = {
+      doc["rootSender"].as<String>(),
+      WiFi.localIP().toString(), // Updating senderNode to current node
+      serverIp, // Setting receiverNode to server's IP
+      doc["binCapacity"].as<float>(),
+      doc["rootTimestampSent"].as<unsigned long>()
+    };
+
+    // Forward the updated packet if not reached the server
     sendPacket();
   }
 }
-
-
 
 #endif

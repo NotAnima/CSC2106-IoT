@@ -28,23 +28,23 @@ void setup() {
   displayInfo();
 }
 
-
 void loop() {
   unsigned long currentMillis = millis();
 
   sendPing();
-  receivePing();
-  receivePacket();
-  timedSendPacket();
 
   if (currentMillis - lastDisplayUpdate >= displayInterval) {
     lastDisplayUpdate = currentMillis;
     displayInfo();
-  }
-
-  // Check and remove inactive nodes from routing table every 10 seconds
-  if (currentMillis - lastRoutingTableCheck >= 10000) { // 10 seconds
-    lastRoutingTableCheck = currentMillis;
+    sendPacket();
     removeInactiveNodes();
   }
+
+  // // Check and remove inactive nodes from routing table every 5 seconds
+  // if (currentMillis - lastRoutingTableCheck >= displayInterval) { // 5 seconds
+  //   lastRoutingTableCheck = currentMillis;
+  // }
+
+  receivePing();
+  receivePacket();
 }
