@@ -157,17 +157,19 @@ void receivePing() {
         String senderMAC = doc["senderNode"]; // Retrieve sender's MAC address from the packet
         IPAddress responderIP = udp.remoteIP();
 
-        JsonDocument ackDoc;
-        ackDoc["action"] = "ack";
-        ackDoc["nodeID"] = WiFi.macAddress(); 
-        ackDoc["ip"] = WiFi.localIP().toString();
-        ackDoc["mac"] = WiFi.macAddress();
-        String ackMsg;
-        serializeJson(ackDoc, ackMsg);
+        // Commmented out to prevent broadcast storming
+        
+        // JsonDocument ackDoc;
+        // ackDoc["action"] = "ack";
+        // ackDoc["nodeID"] = WiFi.macAddress(); 
+        // ackDoc["ip"] = WiFi.localIP().toString();
+        // ackDoc["mac"] = WiFi.macAddress();
+        // String ackMsg;
+        // serializeJson(ackDoc, ackMsg);
 
-        udp.beginPacket(responderIP, udpPort);
-        udp.write((const uint8_t*)ackMsg.c_str(), ackMsg.length());
-        udp.endPacket();
+        // udp.beginPacket(responderIP, udpPort);
+        // udp.write((const uint8_t*)ackMsg.c_str(), ackMsg.length());
+        // udp.endPacket();
 
         updateRoutingTable(senderMAC, responderIP.toString(), senderMAC, millis());
       }
