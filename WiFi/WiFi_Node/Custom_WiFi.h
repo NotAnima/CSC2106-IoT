@@ -11,12 +11,13 @@ WiFiUDP udp;
 const unsigned int udpPort = 4210; // UDP port for communication
 
 // Replace with actual network credentials
-const char* ssid = "wifi_name";
-const char* password = "wifipassword";
+const char* ssid = "Poh";
+const char* password = "lsps353ycss";
 
 unsigned long lastDisplayUpdate = 0;
 const long displayInterval = 5000; // Update the display every 5000 milliseconds (5 seconds)
 unsigned long lastRoutingTableCheck = 0; // Variable to track the last time routing table was checked
+float binCapacity = 0.0;
 
 // Time threshold for removing nodes from routing table (in milliseconds)
 const unsigned long pingTimeout = 10000; // 10 seconds
@@ -48,6 +49,15 @@ std::vector<RoutingTableEntry> routingTable;
 // A dynamic array of integers, representing the sequence of node IDs involved in packet transmission.
 // This vector is used to track the path of data packets through the network, facilitating debugging and analysis.
 std::vector<int> nodeHistory;
+
+float getBinCapacity(){
+  if(binCapacity >= 100)
+  {
+    binCapacity = binCapacity - 100;
+  }
+  binCapacity = binCapacity + 1;
+  return binCapacity;
+}
 
 // Function to display info
 void displayInfo() {
@@ -110,9 +120,7 @@ void sendPing() {
 
   IPAddress broadcastIp = WiFi.gatewayIP(); // Get the gateway IP
   broadcastIp[3] = 255; // Convert to the broadcast IP
-  Serial.println(broadcastIp);
-  // Broadcast address for the subnet
-  // use the gateway ip later 
+
   udp.beginPacket(broadcastIp, udpPort);
   udp.write((const uint8_t *)output.c_str(), output.length());
   udp.endPacket();
@@ -132,6 +140,7 @@ void removeInactiveNodes() {
 
 void receivePing() {
   int packetSize = udp.parsePacket();
+  Serial.println("Packet size is: "+ packetSize);
   if (packetSize) {
     char packetBuffer[255];
     int len = udp.read(packetBuffer, 255);
@@ -190,15 +199,17 @@ void sendAck(const String& originalSender) {
 void sendPacket() {
   if (routingTable.empty()) return; // Ensure there's at least one node in the routing table
 
+  binCapacity = getBinCapacity();
   NodePacket packet = {
     WiFi.localIP().toString(), // rootSender
     WiFi.localIP().toString(), // senderNode
     routingTable[0].ip, // receiverNode - sending to the first node in the routing table
-    0.75, // binCapacity - example capacity, replace with actual sensor data
+    binCapacity, // binCapacity - example capacity, replace with actual sensor data
     millis() // rootTimestampSent
   };
 
   JsonDocument doc;
+  doc["action"] = "data";
   doc["rootSender"] = packet.rootSender;
   doc["senderNode"] = packet.senderNode;
   doc["receiverNode"] = packet.receiverNode;
@@ -240,12 +251,12 @@ void receivePacket() {
     Serial.println("Packet Received: " + String(packetBuffer));
     hops++;
 
-    if (hops >= 2) {
-      // Assuming packet reached the server after 2 hops
-      String originalSender = doc["rootSender"].as<String>();
-      sendAck(originalSender);
-      hops = 0; // Reset hops for next message
-    } else {
+    // if (hops >= 2) {
+    //   // Assuming packet reached the server after 2 hops
+    //   String originalSender = doc["rootSender"].as<String>();
+    //   sendAck(originalSender);
+    //   hops = 0; // Reset hops for next message
+    // } else {
       NodePacket receivedPacket = {
         doc["rootSender"].as<String>(),
         WiFi.localIP().toString(), // Updating senderNode to current node
@@ -256,7 +267,7 @@ void receivePacket() {
 
       // Forward the updated packet if not reached the server
       sendPacket();
-    }
+    // }
   }
 }
 
