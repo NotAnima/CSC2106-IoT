@@ -12,8 +12,8 @@ WiFiUDP udp;
 const unsigned int udpPort = 4210; // UDP port for communication
 
 // Replace with actual network credentials
-const char* ssid = "Poh";
-const char* password = "lsps353ycss";
+const char* ssid = "wifiname";
+const char* password = "wifipassword";
 
 unsigned long lastDisplayUpdate = 0;
 const long displayInterval = 5000; // Update the display every 5000 milliseconds (5 seconds)
