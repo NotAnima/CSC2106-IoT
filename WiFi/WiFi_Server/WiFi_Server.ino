@@ -1,6 +1,6 @@
 
 #include <M5StickCPlus.h>
-#include "Custom_WiFi.h"
+#include "Server_Custom_WiFi.h"
 
 // Initializes the M5StickCPlus device and connects to the specified WiFi network.
 // Prints the connection status and the device's IP address upon successful connection.
@@ -8,8 +8,8 @@ void setupWiFi() {
   M5.begin();
   Serial.begin(115200);
   WiFi.begin(ssid, password);
-  
-Serial.print("Start WiFi ..");
+
+  Serial.print("Start WiFi ..");
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print("Connecting ..");
@@ -31,20 +31,22 @@ void setup() {
 
 void loop() {
   unsigned long currentMillis = millis();
-
   sendPing();
   receivePing();
-  receivePacket();
-  timedSendPacket();
+  // receivePacket();
+  // timedSendPacket();
 
   if (currentMillis - lastDisplayUpdate >= displayInterval) {
-    lastDisplayUpdate = currentMillis;
+    lastDisplayUpdate = currentMillis; 
     displayInfo();
-  }
+    }
+  
 
-  // Check and remove inactive nodes from routing table every 10 seconds
+  // Check and mark inactive nodes from routing table every 10 seconds
   if (currentMillis - lastRoutingTableCheck >= 10000) { // 10 seconds
     lastRoutingTableCheck = currentMillis;
-    removeInactiveNodes();
+    markInactiveNodesAsOff();
   }
+
+  delay(1000);
 }
