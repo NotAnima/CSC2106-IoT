@@ -298,10 +298,10 @@ void handle_capacity_packet(CapacityPacket &cpacket)
     Serial.println("REQUEST: Received to forward capacity packet, forwarding...");
 
     /* ========================================================== */
-    /* === TODO: PACKET PRIORITY BY CAPACITY BEFORE FORWARDING == */
+    /* === PACKET PRIORITY BY CAPACITY BEFORE FORWARDING == */
     /* ========================================================== */
     add_to_capacity_list(cpacket);
-    forward_capacity_packet();
+    forward_capacity_packet(processCapacityPackets[0].alertNode.nodeId, processCapacityPackets[0].binCapacity);
   }
 }
 
@@ -356,67 +356,64 @@ void forward_node_packet()
   lastReceivedForwardingNode = millis();
 }
 
-void forward_capacity_packet() 
+void forward_capacity_packet(uint8_t alertId, uint8_t binCapacity) 
 {
-  for(int i=0; i < capacityPackets; i++)
+  Serial.println("REQUEST: Foward capacity packet...");
+  Packet packet;
+  packet.authKey = AUTH_KEY;
+  packet.msgType = MSG_TYPE_CAPACITY;
+  packet.data.capacityPacket = construct_capacity_packet(alertId, binCapacity);
+
+  uint8_t len = sizeof(packet);
+  sendPacket((uint8_t *)&packet, &len);
+
+  uint8_t ackMessage = MSG_TYPE_ACK_FAILURE;
+
+  // Wait for ACK or timeout
+  unsigned long startTime = millis();
+  unsigned long timeout = 15000; // 15 seconds timeout
+
+while ((millis() - startTime) <= timeout)
+{
+  if (rf95.waitAvailableTimeout(5000))
   {
-    Serial.println("REQUEST: Foward capacity packet...");
-    Packet packet;
-    packet.authKey = AUTH_KEY;
-    packet.msgType = MSG_TYPE_CAPACITY;
-    packet.data.capacityPacket = construct_capacity_packet(processCapacityPackets[i].alertNode.nodeId, processCapacityPackets[i].binCapacity);
+    AckPacket ackPacket;
 
-    uint8_t len = sizeof(packet);
-    sendPacket((uint8_t *)&packet, &len);
-
-    uint8_t ackMessage = MSG_TYPE_ACK_FAILURE;
-
-    // Wait for ACK or timeout
-    unsigned long startTime = millis();
-    unsigned long timeout = 15000; // 15 seconds timeout
-
-  while ((millis() - startTime) <= timeout)
-  {
-    if (rf95.waitAvailableTimeout(5000))
-    {
-      AckPacket ackPacket;
-
-        uint8_t len = sizeof(ackPacket);
-        if (rf95.recv((uint8_t *)&ackPacket, &len))
+      uint8_t len = sizeof(ackPacket);
+      if (rf95.recv((uint8_t *)&ackPacket, &len))
+      {
+        if (ackPacket.receiverNode.nodeId == NODE_ID && ackPacket.authKey == AUTH_KEY && ackPacket.msgType == MSG_TYPE_ACK_SUCCEED)
         {
-          if (ackPacket.receiverNode.nodeId == NODE_ID && ackPacket.authKey == AUTH_KEY && ackPacket.msgType == MSG_TYPE_ACK_SUCCEED)
+          Serial.println("ACK: Received, capacity alert sent to server");
+          ackMessage = MSG_TYPE_ACK_SUCCEED;
+          if (ackPacket.alertNode.nodeId == NODE_ID)
           {
-            Serial.println("ACK: Received, capacity alert sent to server");
-            ackMessage = MSG_TYPE_ACK_SUCCEED;
-            if (ackPacket.alertNode.nodeId == NODE_ID)
-            {
-              alertSent = true;
-            }
-            else
-            {
-              Serial.println("RESPONSE: Forwarding ACK to alert node");
-              ackPacket = construct_ack_packet(processCapacityPackets[0].alertNode.nodeId, processCapacityPackets[0].senderNode.nodeId, MSG_TYPE_ACK_SUCCEED);
-              uint8_t len = sizeof(ackPacket);
-              sendPacket((uint8_t *)&ackPacket, &len);
-              remove_from_capacity_list();
-            }
-            break;
+            alertSent = true;
           }
+          else
+          {
+            Serial.println("RESPONSE: Forwarding ACK to alert node");
+            ackPacket = construct_ack_packet(processCapacityPackets[0].alertNode.nodeId, processCapacityPackets[0].senderNode.nodeId, MSG_TYPE_ACK_SUCCEED);
+            uint8_t len = sizeof(ackPacket);
+            sendPacket((uint8_t *)&ackPacket, &len);
+            remove_from_capacity_list();
+          }
+          break;
         }
       }
-      else
-      {
-        Serial.println("ACK: Not received, attempting to retransmit");
-        uint8_t len = sizeof(packet);
-        sendPacket((uint8_t *)&packet, &len);
-      }
     }
-
-    if (ackMessage == MSG_TYPE_ACK_FAILURE)
+    else
     {
-      Serial.println("Ack: Not received, forwarding node is down");
-      remove_from_routing_table();
+      Serial.println("ACK: Not received, attempting to retransmit");
+      uint8_t len = sizeof(packet);
+      sendPacket((uint8_t *)&packet, &len);
     }
+  }
+
+  if (ackMessage == MSG_TYPE_ACK_FAILURE)
+  {
+    Serial.println("Ack: Not received, forwarding node is down");
+    remove_from_routing_table();
   }
 }
 /* ========================================================== */
