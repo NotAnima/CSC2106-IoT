@@ -176,6 +176,7 @@ void add_to_capacity_list(CapacityPacket cpacket)
     processCapacityPackets[capacityPackets] = cpacket;
     capacityPackets++;
 
+    // Swap elements by prioritizing bin capacity
     for (int i = 1; i < capacityPackets; i++) 
     {
       if (processCapacityPackets[i - 1].binCapacity < processCapacityPackets[i].binCapacity) 
@@ -356,7 +357,7 @@ void forward_node_packet()
   lastReceivedForwardingNode = millis();
 }
 
-void forward_capacity_packet(uint8_t alertId, uint8_t binCapacity) 
+void forward_capacity_packet(uint8_t alertId, uint8_t binCapacity)
 {
   Serial.println("REQUEST: Foward capacity packet...");
   Packet packet;
@@ -373,11 +374,11 @@ void forward_capacity_packet(uint8_t alertId, uint8_t binCapacity)
   unsigned long startTime = millis();
   unsigned long timeout = 15000; // 15 seconds timeout
 
-while ((millis() - startTime) <= timeout)
-{
-  if (rf95.waitAvailableTimeout(5000))
+  while ((millis() - startTime) <= timeout)
   {
-    AckPacket ackPacket;
+    if (rf95.waitAvailableTimeout(5000))
+    {
+      AckPacket ackPacket;
 
       uint8_t len = sizeof(ackPacket);
       if (rf95.recv((uint8_t *)&ackPacket, &len))

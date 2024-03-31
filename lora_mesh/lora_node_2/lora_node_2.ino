@@ -176,7 +176,7 @@ void add_to_capacity_list(CapacityPacket cpacket)
     processCapacityPackets[capacityPackets] = cpacket;
     capacityPackets++;
 
-    // Swap by prioritizing bin capacity
+    // Swap elements by prioritizing bin capacity
     for (int i = 1; i < capacityPackets; i++) 
     {
       if (processCapacityPackets[i - 1].binCapacity < processCapacityPackets[i].binCapacity)
