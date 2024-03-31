@@ -47,7 +47,9 @@ void loop() {
   if (rf95.waitAvailableTimeout(1500)) {
     Packet packet;
 
-    if (rf95.recv((uint8_t *)&packet, sizeof(packet))) {
+    uint8_t len = sizeof(packet);
+    if (rf95.recv((uint8_t *)&packet, &len)) 
+    {
       if (packet.authKey == AUTH_KEY) {
         if (packet.msgType == MSG_TYPE_REQ_FORWARD_NODE) {
           handle_node_packet(packet.data.nodePacket);
@@ -106,7 +108,10 @@ void handle_node_packet(NodePacket &packet) {
     Packet packet;
     packet.msgType = MSG_TYPE_RES_FORWARD_NODE;
     packet.data.nodePacket = nodePacket;
-    sendPacket((uint8_t *)&packet, sizeof(packet));
+
+    uint8_t len = sizeof(packet);
+    sendPacket((uint8_t *)&packet, &len);
+
     Serial.println("RESPONSE: Sent confirmation to be a forwarding node");
   }
 }
@@ -117,7 +122,9 @@ void handle_capacity_packet(CapacityPacket &cpacket) {
     Serial.println("RESPONSE: Received capacity packet at server");
 
     AckPacket ackPacket = construct_ack_packet(cpacket.alertNode.nodeId, cpacket.senderNode.nodeId, MSG_TYPE_ACK_SUCCEED);
-    sendPacket((uint8_t *)&ackPacket, sizeof(ackPacket));
+    
+    uint8_t len = sizeof(ackPacket);
+    sendPacket((uint8_t *)&ackPacket, &len);
 
     Serial.print("RESPONSE: Bin capacity for node ");
     Serial.print(cpacket.alertNode.nodeId);
