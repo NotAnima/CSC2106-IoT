@@ -38,6 +38,7 @@ void loop() {
     displayInfo();
     sendPacket();
     removeInactiveNodes();
+    printAndRequeuePackets();
   }
 
   // // Check and remove inactive nodes from routing table every 5 seconds

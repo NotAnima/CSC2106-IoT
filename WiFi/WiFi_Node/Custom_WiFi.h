@@ -1,12 +1,16 @@
 #ifndef Custom_WiFi
 #define Custom_WiFi
 
+#undef min
+#undef max
+
 #include <WiFi.h>
 #include <vector>
 #include <ArduinoJson.h>
 #include <WiFiUdp.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <queue>
 
 // Global UDP object
 WiFiUDP udp;
@@ -47,9 +51,47 @@ struct NodePacket {
 // This vector allows for efficient addition and removal of routing entries as the network topology changes.
 std::vector<RoutingTableEntry> routingTable;
 
-// A dynamic array of integers, representing the sequence of node IDs involved in packet transmission.
-// This vector is used to track the path of data packets through the network, facilitating debugging and analysis.
-std::vector<int> nodeHistory;
+// Update the queue to store NodePacket structures
+std::queue<NodePacket> packetQueue;
+
+// Function to add a NodePacket to the queue
+void enqueuePacket(const NodePacket& packet) {
+  packetQueue.push(packet);
+}
+
+// Function to process and remove the next NodePacket from the queue
+void dequeueAndProcessPacket() {
+  if (!packetQueue.empty()) {
+    NodePacket packet = packetQueue.front();
+    packetQueue.pop();
+    // Example processing: Print the packet's details
+    Serial.println("Processing packet from " + packet.rootSender);
+    Serial.println("Bin Capacity: " + String(packet.binCapacity));
+    // Further processing can be done here, such as forwarding the packet
+  }
+}
+
+void printAndRequeuePackets() {
+  std::queue<NodePacket> tempQueue;
+
+  while (!packetQueue.empty()) {
+    NodePacket packet = packetQueue.front();
+    packetQueue.pop();
+    Serial.println("Packet Details:");
+    Serial.println(" Root Sender: " + packet.rootSender);
+    Serial.println(" Sender Node: " + packet.senderNode);
+    Serial.println(" Receiver Node: " + packet.receiverNode);
+    Serial.println(" Bin Capacity: " + String(packet.binCapacity));
+    Serial.println(" Timestamp Sent: " + String(packet.rootTimestampSent));
+    tempQueue.push(packet);
+  }
+
+  // Move the packets back to the original queue
+  while (!tempQueue.empty()) {
+    packetQueue.push(tempQueue.front());
+    tempQueue.pop();
+  }
+}
 
 // TODO: Phileo can add in ultrasonic code in this
 float getBinCapacity(){
@@ -82,11 +124,6 @@ void displayInfo() {
   for (auto& entry : routingTable) {
     M5.Lcd.printf("ID: %d, IP: %s, MAC: %s\n", entry.nodeID, entry.ip.c_str(), entry.mac.c_str());
   }
-
-  M5.Lcd.println("Node History:");
-  for (int nodeId : nodeHistory) {
-    M5.Lcd.printf("Node ID: %d\n", nodeId);
-  }
 }
 
 // Function to display routing table on the Serial Monitor
@@ -94,14 +131,6 @@ void displayRoutingTableSerial() {
   Serial.println("Routing Table:");
   for (auto& entry : routingTable) {
     Serial.printf("ID: %d, IP: %s, MAC: %s\n", entry.nodeID, entry.ip.c_str(), entry.mac.c_str());
-  }
-}
-
-// Function to display node history on the Serial Monitor
-void displayNodeHistorySerial() {
-  Serial.println("Node History:");
-  for (int nodeId : nodeHistory) {
-    Serial.printf("Node ID: %d\n", nodeId);
   }
 }
 
@@ -167,7 +196,7 @@ void receivePing() {
         String senderMAC = doc["senderNode"]; // Retrieve sender's MAC address from the packet
         IPAddress responderIP = udp.remoteIP();
         
-        // Commmented out to prevent broadcast storming
+        // // Commmented out to prevent broadcast storming
         // JsonDocument ackDoc;
         // ackDoc["action"] = "ack";
         // ackDoc["nodeID"] = WiFi.macAddress(); 
@@ -281,6 +310,7 @@ void receivePacket() {
       doc["binCapacity"].as<float>(),
       doc["rootTimestampSent"].as<unsigned long>()
     };
+    enqueuePacket(receivedPacket);
 
     // Forward the updated packet if not reached the server
     sendPacket();
