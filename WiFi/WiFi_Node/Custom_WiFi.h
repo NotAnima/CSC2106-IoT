@@ -5,6 +5,8 @@
 #include <vector>
 #include <ArduinoJson.h>
 #include <WiFiUdp.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 // Global UDP object
 WiFiUDP udp;
@@ -32,7 +34,6 @@ struct RoutingTableEntry {
   unsigned long timestamp; // Timestamp for the last received ping
 };
 
-
 struct NodePacket {
   String rootSender;    // Original sender of the packet
   String senderNode;    // Current sender of the packet
@@ -50,6 +51,7 @@ std::vector<RoutingTableEntry> routingTable;
 // This vector is used to track the path of data packets through the network, facilitating debugging and analysis.
 std::vector<int> nodeHistory;
 
+// TODO: Phileo can add in ultrasonic code in this
 float getBinCapacity(){
   if(binCapacity >= 100)
   {
@@ -57,6 +59,14 @@ float getBinCapacity(){
   }
   binCapacity = binCapacity + 1;
   return binCapacity;
+}
+
+void getBinCapacityTask(void *parameter){
+  for(;;){ // Infinite loop
+    getBinCapacity();
+    Serial.println("Bin Capacity of " + WiFi.macAddress() + ": " + String(binCapacity));
+    vTaskDelay(pdMS_TO_TICKS(10000)); // Delay for 1 minute (60000 milliseconds)
+  }
 }
 
 // Function to display info
@@ -157,19 +167,17 @@ void receivePing() {
         String senderMAC = doc["senderNode"]; // Retrieve sender's MAC address from the packet
         IPAddress responderIP = udp.remoteIP();
 
-        // Commmented out to prevent broadcast storming
-        
-        // JsonDocument ackDoc;
-        // ackDoc["action"] = "ack";
-        // ackDoc["nodeID"] = WiFi.macAddress(); 
-        // ackDoc["ip"] = WiFi.localIP().toString();
-        // ackDoc["mac"] = WiFi.macAddress();
-        // String ackMsg;
-        // serializeJson(ackDoc, ackMsg);
+        JsonDocument ackDoc;
+        ackDoc["action"] = "ack";
+        ackDoc["nodeID"] = WiFi.macAddress(); 
+        ackDoc["ip"] = WiFi.localIP().toString();
+        ackDoc["mac"] = WiFi.macAddress();
+        String ackMsg;
+        serializeJson(ackDoc, ackMsg);
 
-        // udp.beginPacket(responderIP, udpPort);
-        // udp.write((const uint8_t*)ackMsg.c_str(), ackMsg.length());
-        // udp.endPacket();
+        udp.beginPacket(responderIP, udpPort);
+        udp.write((const uint8_t*)ackMsg.c_str(), ackMsg.length());
+        udp.endPacket();
 
         updateRoutingTable(senderMAC, responderIP.toString(), senderMAC, millis());
       }
