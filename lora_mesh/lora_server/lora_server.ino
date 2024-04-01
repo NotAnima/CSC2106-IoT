@@ -102,7 +102,7 @@ void sendPacket(const uint8_t *data, uint8_t len) {
 }
 
 void handle_node_packet(NodePacket &packet) {
-  if (packet.node.nodeId != 2) {
+  if (packet.node.nodeId != 2 || packet.node.nodeId != 3) {
     Serial.println("REQUEST: Received to be a node's forwarding node");
     NodePacket nodePacket = construct_node_packet();
     Packet packet;

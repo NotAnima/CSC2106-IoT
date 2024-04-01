@@ -45,6 +45,26 @@ void setup()
 
 void loop()
 {
+  /* =================================== */
+  /* === HANDLING SENDING OF PACKETS === */
+  /* =================================== */
+    if (capacityPackets != 0)
+    {
+      if (millis() - lastPacketSentTime >= packetSendInterval || capacityPackets >= 2)
+      {
+        Serial.println(capacityPackets);
+        for (int i = 0; i < capacityPackets; i++)
+        {
+          forward_capacity_packet(processCapacityPackets[i].alertNode.nodeId, processCapacityPackets[i].binCapacity);
+          Serial.println(capacityPackets);
+        }
+        lastPacketSentTime = millis();
+      }
+    }
+  /* =================================== */
+  /* === HANDLING SENDING OF PACKETS === */
+  /* =================================== */
+
   /* ========================================================== */
   /* === HANDLING RESPONSE TO ADD NODE TO ROUTING TABLE REQ === */
   /* === & REQUEST FOR FORWARDING CAPACITY BINS TO SERVER   === */
@@ -302,7 +322,6 @@ void handle_capacity_packet(CapacityPacket &cpacket)
     /* === PACKET PRIORITY BY CAPACITY BEFORE FORWARDING == */
     /* ========================================================== */
     add_to_capacity_list(cpacket);
-    forward_capacity_packet(processCapacityPackets[0].alertNode.nodeId, processCapacityPackets[0].binCapacity);
   }
 }
 

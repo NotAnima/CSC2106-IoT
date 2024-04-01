@@ -108,6 +108,8 @@ void print_routing_table();
 /* ========================================================== */
 /* ============ CAPACITY HANDLING DECLARATION =============== */
 /* ========================================================== */
+unsigned long lastPacketSentTime = 0;
+const unsigned long packetSendInterval = 15000;
 void add_to_capacity_list(CapacityPacket cpacket);
 void remove_from_capacity_list();
 /* ========================================================== */
