@@ -13,9 +13,6 @@ void setup() {
   mesh.onNewConnection(&onNewConnectionCallback);
   mesh.onDroppedConnection(&onDroppedConnectionCallback);
 
-  // Wait for mesh to settle
-  delay(5000); // This delay ensures mesh network has time to initialize
-
   // Display NodeID on LCD
   M5.Lcd.fillScreen(BLACK);
   M5.Lcd.setCursor(0, 0);
