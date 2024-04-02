@@ -10,7 +10,6 @@ One. Set up MQTT Broker on your laptop
   Follow the instructions at https://github.com/drfuzzi/CSC2106_MQTT - Step 1
 
   Update the `mosquitto.conf` file with the following configuration:
-  `mosquitto.conf` 
   `listener 1883`
   `listener 9001`
   `protocol websockets`
