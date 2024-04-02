@@ -45,6 +45,7 @@ void enqueueMessage(const CustomMessage& message) {
     });
 }
 
+// TODO: Phileo to add in your ultrasonic code
 float getBinCapacity() {
   if (binCapacity >= 100) {
     binCapacity = 0;
