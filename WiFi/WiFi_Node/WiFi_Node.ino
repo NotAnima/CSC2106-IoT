@@ -7,28 +7,28 @@ void setup() {
   M5.begin();
   Serial.begin(115200);
 
+
   mesh.setDebugMsgTypes(ERROR | DEBUG);
-  mesh.init(MESH_PREFIX, MESH_PASSWORD, MESH_PORT);
+  mesh.init(MESH_PREFIX, MESH_PASSWORD, &ts, MESH_PORT);
   mesh.onReceive(&receivedCallback);
   mesh.onNewConnection(&onNewConnectionCallback);
   mesh.onDroppedConnection(&onDroppedConnectionCallback);
 
   // Display NodeID on LCD
-  M5.Lcd.fillScreen(BLACK);
-  M5.Lcd.setCursor(0, 0);
-  M5.Lcd.setTextColor(WHITE);
-  M5.lcd.setRotation(3);
-  M5.Lcd.printf("NodeID: %u", mesh.getNodeId());
+  // displayLCD();
+  M5.Lcd.println(preferredServer);
 
-  // Setup tasks
-  ts.init();
+  // // Setup tasks
+  // ts.init();
   ts.addTask(taskGetBinCapacity);
   ts.addTask(tSendCustomMessage);
+  ts.addTask(taskDisplayLCD);
   taskGetBinCapacity.enable();
   tSendCustomMessage.enable();
+  taskDisplayLCD.enable();
 }
 
 void loop() {
-  ts.execute(); // Execute scheduled tasks
+  // ts.execute(); // Execute scheduled tasks
   mesh.update(); // Handle mesh networking
 }

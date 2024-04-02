@@ -6,14 +6,18 @@
 #include <vector>
 #include <algorithm>
 
-#define MESH_PREFIX "meshNetwork"
-#define MESH_PASSWORD "meshPassword"
+#define MESH_PREFIX "dustbin"
+#define MESH_PASSWORD "password"
 #define MESH_PORT 5555
 
 Scheduler ts;
 String latestReceivedMessage;
 String latestSentMessage;
 painlessMesh mesh;
+
+// Declare the knownServers here first
+std::vector<uint32_t> knownServers = {634095965};
+uint32_t preferredServer = knownServers[0]; // will initially be the first server in the list
 
 float binCapacity = 0.0;
 
@@ -69,18 +73,36 @@ void sendCustomMessage() {
   latestSentMessage = "targetId: " + String(message.targetId) + ", payload: " + message.payload + ", priority: " + String(message.priority);
 }
 
+void displayLCD(){
+  M5.Lcd.fillScreen(BLACK);
+  M5.Lcd.setCursor(0, 0);
+  M5.Lcd.setTextColor(WHITE);
+  M5.lcd.setRotation(3);
+  M5.Lcd.printf("NodeID: %u\n", mesh.getNodeId());
+  if(preferredServer == 634095965)
+  {
+    M5.Lcd.println("Grabbed the correct server ID");
+  }
+  // M5.Lcd.println("Preferred Server: " + preferredServer);
+  // Serial.println("Preferred Server: " + preferredServer);
+}
+
+Task taskDisplayLCD(TASK_SECOND * 5, TASK_FOREVER, &displayLCD);
+
 Task tSendCustomMessage(TASK_SECOND * 10, TASK_FOREVER, &sendCustomMessage);
 
 void getBinCapacityCallback() {
     float currentBinCapacity = getBinCapacity();
     Serial.println("Bin Capacity: " + String(currentBinCapacity));
 
-  uint32_t targetId = 2510821181; //36
+  uint32_t targetId = preferredServer;
   // uint32_t targetId = 634094909; //131
+
   StaticJsonDocument<200> doc;
   doc["rootSender"] = mesh.getNodeId();
   doc["binCapacity"] = currentBinCapacity;
-  doc["rootTimestampSent"] = millis();
+  doc["rootTimestampSent"] = mesh.getNodeTime();
+
   String payload;
   serializeJson(doc, payload);
 
@@ -91,11 +113,11 @@ void getBinCapacityCallback() {
 Task taskGetBinCapacity(TASK_SECOND * 10, TASK_FOREVER, &getBinCapacityCallback);
 
 void onNewConnectionCallback(uint32_t nodeId) {
-    Serial.printf("New Connection: %u\n", nodeId);
+    // Serial.printf("New Connection: %u\n", nodeId);
 }
 
 void onDroppedConnectionCallback(uint32_t nodeId) {
-    Serial.printf("Dropped Connection: %u\n", nodeId);
+    // Serial.printf("Dropped Connection: %u\n", nodeId);
 }
 
 void receivedCallback(uint32_t from, String &msg) {
@@ -103,8 +125,8 @@ void receivedCallback(uint32_t from, String &msg) {
     DeserializationError error = deserializeJson(inDoc, msg);
 
     if (error) {
-        Serial.print(F("deserializeJson() failed with code "));
-        Serial.println(error.c_str());
+        // Serial.print(F("deserializeJson() failed with code "));
+        // Serial.println(error.c_str());
         return; // Early return if deserialization fails
     }
 

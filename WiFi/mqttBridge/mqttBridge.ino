@@ -1,11 +1,11 @@
 //************************************************************
-// this is a simple example that uses the painlessMesh library to
-// connect to a another network and relay messages from a MQTT broker to the nodes of the mesh network.
-// To send a message to a mesh node, you can publish it to "painlessMesh/to/12345678" where 12345678 equals the nodeId.
-// To broadcast a message to all nodes in the mesh you can publish it to "painlessMesh/to/broadcast".
-// When you publish "getNodes" to "painlessMesh/to/gateway" you receive the mesh topology as JSON
-// Every message from the mesh which is send to the gateway node will be published to "painlessMesh/from/12345678" where 12345678 
-// is the nodeId from which the packet was send.
+// This is the server/bridge network as well as the MQTT Publisher to the centralized network
+// of whichever WiFi network it is connected to, denoted by the STATION_SSID and STATION_PASSWORD
+// those are analogous to wifiSetup() in most other Arduino files
+
+// This bridge server will periodically schedule a task to unload the data packets received from the nodes in
+// the mesh network to the MQTT broker specified under the IPAdress of the MQTTBroker, for our example, we would be using our laptops as the broker.
+// However, it is worth noting that this can be easily translated into a raspberry pi that runs the MQTT broker
 //************************************************************
 
 #include <ArduinoJson.h>
@@ -23,13 +23,15 @@
 #define   STATION_PASSWORD "lsps353ycss"
 
 #define HOSTNAME "MQTT_Bridge"
+#define MQTT_TOPIC "dustbinInfo"
 
 /*===================================================================*/
 /*                     Custom Struct Declaration                     */
 /*===================================================================*/
 struct CustomMessage {
-  String payload;
-  int priority;
+  String rootSender;
+  float binCapacity;
+  uint32_t timestamp;
 };
 
 /*===================================================================*/
@@ -48,9 +50,15 @@ CustomMessage deserializeMessage(const String& jsonString);
 void processMessagesFromQueue();
 void addToMessageQueue(const CustomMessage& message);
 
+// Tasks
+Task taskProcessQueue( TASK_SECOND * 10, TASK_FOREVER, &processMessagesFromQueue);
+
 /*===================================================================*/
 /*                         Global variables                          */
 /*===================================================================*/
+// Task manager
+Scheduler taskScheduler;
+
 painlessMesh  mesh;
 WiFiClient wifiClient;
 SimpleList<uint32_t> nodes;
@@ -58,10 +66,10 @@ IPAddress getlocalIP();
 IPAddress myIP(0,0,0,0);
 IPAddress mqttBroker(192, 168, 68, 103);
 PubSubClient mqttClient(mqttBroker, 1883, mqttCallback, wifiClient);
-// Priority Queue Declaration
+// Priority Queue Declaration, makes the earliest receieved messages in the queue to go first
 std::priority_queue<CustomMessage, std::vector<CustomMessage>, std::function<bool(const CustomMessage&, const CustomMessage&)>> messageQueue(
   [](const CustomMessage& msg1, const CustomMessage& msg2) {
-      return msg1.priority > msg2.priority; // Higher priority messages should come first
+      return msg1.timestamp < msg2.timestamp; // Earlier messages go first
   }
 );
 
@@ -82,7 +90,13 @@ void setup() {
   mesh.setRoot(true);
   mesh.setContainsRoot(true);
 
+  // Show the initial display
   displayLCD();
+
+  // initialize all scheduled tasks
+  taskScheduler.init();
+  taskScheduler.addTask(taskProcessQueue);
+  taskProcessQueue.enable();
 }
 
 void loop() {
@@ -90,19 +104,19 @@ void loop() {
   mqttClient.loop();
   
   if(myIP != getlocalIP()){
+
     myIP = getlocalIP();
     Serial.println("My IP is " + myIP.toString());
     displayLCD();
-    if (mqttClient.connect("painlessMeshClient")) {
-      Serial.println("Inside connected");
-      mqttClient.publish("painlessMesh/from/gateway","Ready!");
-      mqttClient.subscribe("painlessMesh/to/#");
-      String msg;
-      msg += "Hello It's the bridge";
-      mqttClient.publish("mqtt_bridge", msg.c_str());
 
+    if (mqttClient.connect("painlessMeshClient")) {
+      Serial.println("MQTT Client is connected!");
     } 
   }
+  
+  // executed any queued up tasks in the scheduler
+  taskScheduler.execute();
+
 }
 
 void displayLCD(){
@@ -114,6 +128,7 @@ void displayLCD(){
   M5.Lcd.println("My IP Address is: " + getlocalIP().toString());
   M5.Lcd.println("Routing Table:");
 
+  // For showing all the connected nodes in the mesh de-centralized network
   SimpleList<uint32_t>::iterator node = nodes.begin();
   for (uint32_t node : nodes) {
     M5.Lcd.print("Node ID: ");
@@ -121,62 +136,66 @@ void displayLCD(){
   }
 }
 
-
+// Flattens the message into a jsonDocument that is ready to be sent over the phyiscal layer
 String serializeMessage(const CustomMessage& message) {
   StaticJsonDocument<200> doc;
 
-  doc["payload"] = message.payload;
-  doc["priority"] = message.priority;
+  doc["rootSender"] = message.rootSender;
+  doc["binCapacity"] = message.binCapacity;
+  doc["timestamp"] = message.timestamp;
 
   String serializedMessage;
   serializeJson(doc, serializedMessage);
   return serializedMessage;
 }
 
+// Inverse of serializeMessage, unflattens the physical data into a JSON and then transforms into a CustomMessage
 CustomMessage deserializeMessage(const String& jsonString) {
   StaticJsonDocument<200> doc;
   deserializeJson(doc, jsonString);
 
   CustomMessage message;
 
-  message.payload = doc["payload"].as<String>();
-  message.priority = doc["priority"];
+  // Uses the JSON Document with the appropriate keys to create a CustomMessage
+  message.rootSender = doc["rootSender"].as<String>();
+  message.binCapacity = doc["binCapacity"].as<float>();
+  message.timestamp = mesh.getNodeTime(); // assigns the mesh network's sync-ish'd timestamp
 
   return message;
 }
 
+void receivedCallback( const uint32_t &from, const String &msg ) {
+  Serial.printf("bridge: Received from %u msg=%s, server time: %u\n", from, msg.c_str(), mesh.getNodeTime());
+  CustomMessage receivedMessage;
+  receivedMessage = deserializeMessage(msg);
+  // add the message to a queue to process later so it won't introduce delays and not to drop any packets to provide QOS 1
+  addToMessageQueue(receivedMessage);
+}
+
 void processMessagesFromQueue() {
-  while(!messageQueue.empty()) {
-    CustomMessage message = messageQueue.top();
-    messageQueue.pop();
-    // publish to topic [HERE]
-    Serial.printf("[Priority Queue] Received message with priority %d: %s\n", message.priority, message.payload.c_str());
-  }
+  if (mqttClient.connect("painlessMeshClient")) {
+    while(!messageQueue.empty()) {
+      CustomMessage message = messageQueue.top();
+      messageQueue.pop();
+      String jsonString = serializeMessage(message);
+      Serial.println("JSON String: " + jsonString);
+      mqttClient.publish(MQTT_TOPIC, jsonString.c_str());
+    }
+  } 
 }
 
 void addToMessageQueue(const CustomMessage& message) {
   messageQueue.push(message);
 }
 
-void receivedCallback( const uint32_t &from, const String &msg ) {
-  Serial.printf("bridge: Received from %u msg=%s\n", from, msg.c_str());
-  CustomMessage receivedMessage;
-  String topic = "mqtt_bridge";
-  receivedMessage = deserializeMessage(msg);
-  addToMessageQueue(receivedMessage);
-  // add the message to a queue
-
-
-  // mqttClient.publish(topic.c_str(), msg.c_str());
-  // Serial.println("Added message from %u msg=")
-}
-
+// whenever the mesh network changes, adding or deleting nodes. It will update the nodes variable and then redisplay the network's routing table
+// it will display all the nodes in the network, whether connected directly or indirectly to the bridge serevr
 void onChangedCallback(){
   nodes = mesh.getNodeList();
   displayLCD();
 }
 
-// used for when broker sends a message to this bridge network to get the callback targetStr information
+// used for when broker sends a message to this bridge network to get the callback targetStr information, but not applicable for our usecase thus far
 void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
   char* cleanPayload = (char*)malloc(length+1);
   memcpy(cleanPayload, payload, length);
@@ -210,11 +229,12 @@ void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
     }
     else
     {
-      mqttClient.publish("painlessMesh/from/gateway", "Client not connected!");
+      mqttClient.publish(MQTT_TOPIC, "Client not connected!");
     }
   }
 }
 
+// get THIS bridge node's internal IP address to the bridge's AP. A gateway to centralized internet access
 IPAddress getlocalIP() {
   return IPAddress(mesh.getStationIP());
 }
