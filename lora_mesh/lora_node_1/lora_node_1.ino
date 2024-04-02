@@ -175,6 +175,17 @@ void add_to_capacity_list(CapacityPacket cpacket)
     processCapacityPackets[capacityPackets] = cpacket;
     capacityPackets++;
 
+    // Swap elements by prioritizing bin capacity
+    for (int i = 1; i < capacityPackets; i++) 
+    {
+      if (processCapacityPackets[i - 1].binCapacity < processCapacityPackets[i].binCapacity) 
+      {
+        CapacityPacket temp = processCapacityPackets[i];
+        processCapacityPackets[i] = processCapacityPackets[i - 1];
+        processCapacityPackets[i - 1] = temp;
+      }
+    }
+
     Serial.println("SYS: Add packet to the capacity list");
   }
   else
@@ -285,10 +296,10 @@ void handle_capacity_packet(CapacityPacket &cpacket)
     Serial.println("REQUEST: Received to forward capacity packet, forwarding...");
 
     /* ========================================================== */
-    /* === TODO: PACKET PRIORITY BY CAPACITY BEFORE FORWARDING == */
+    /* === PACKET PRIORITY BY CAPACITY BEFORE FORWARDING == */
     /* ========================================================== */
     add_to_capacity_list(cpacket);
-    forward_capacity_packet(cpacket.alertNode.nodeId, cpacket.binCapacity);
+    forward_capacity_packet(processCapacityPackets[0].alertNode.nodeId, processCapacityPackets[0].binCapacity);
   }
 }
 
