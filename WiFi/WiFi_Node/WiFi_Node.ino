@@ -1,51 +1,37 @@
-
 #include <M5StickCPlus.h>
-#include "Custom_WiFi.h"
-
-// Initializes the M5StickCPlus device and connects to the specified WiFi network.
-// Prints the connection status and the device's IP address upon successful connection.
-void setupWiFi() {
-  M5.begin();
-  Serial.begin(115200);
-  WiFi.begin(ssid, password);
-  
-Serial.print("Start WiFi ..");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print("Connecting ..");
-  }
-  M5.Lcd.setCursor(0, 20, 2);
-  M5.Lcd.print("IP: ");
-  M5.Lcd.println(WiFi.localIP());
-
-  // Initialize UDP
-  udp.begin(udpPort);
-
-}
+#undef min
+#undef max // It's also a good idea to undefine max for consistency
+#include "Custom_WiFi.h" // Make sure Custom_WiFi.h does not redefine receivedCallback if it's already defined in WiFi_Node.ino
 
 void setup() {
-  setupWiFi();
-  displayInfo();
+  M5.begin();
+  Serial.begin(115200);
+
+  mesh.setDebugMsgTypes(ERROR | DEBUG);
+  mesh.init(MESH_PREFIX, MESH_PASSWORD, MESH_PORT);
+  mesh.onReceive(&receivedCallback);
+  mesh.onNewConnection(&onNewConnectionCallback);
+  mesh.onDroppedConnection(&onDroppedConnectionCallback);
+
+  // Wait for mesh to settle
+  delay(5000); // This delay ensures mesh network has time to initialize
+
+  // Display NodeID on LCD
+  M5.Lcd.fillScreen(BLACK);
+  M5.Lcd.setCursor(0, 0);
+  M5.Lcd.setTextColor(WHITE);
+  M5.lcd.setRotation(3);
+  M5.Lcd.printf("NodeID: %u", mesh.getNodeId());
+
+  // Setup tasks
+  ts.init();
+  ts.addTask(taskGetBinCapacity);
+  ts.addTask(tSendCustomMessage);
+  taskGetBinCapacity.enable();
+  tSendCustomMessage.enable();
 }
 
 void loop() {
-  unsigned long currentMillis = millis();
-
-  sendPing();
-
-  if (currentMillis - lastDisplayUpdate >= displayInterval) {
-    lastDisplayUpdate = currentMillis;
-    displayInfo();
-    sendPacket();
-    removeInactiveNodes();
-    printAndRequeuePackets();
-  }
-
-  // // Check and remove inactive nodes from routing table every 5 seconds
-  // if (currentMillis - lastRoutingTableCheck >= displayInterval) { // 5 seconds
-  //   lastRoutingTableCheck = currentMillis;
-  // }
-
-  receivePing();
-  receivePacket();
+  ts.execute(); // Execute scheduled tasks
+  mesh.update(); // Handle mesh networking
 }
