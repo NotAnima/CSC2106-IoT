@@ -19,8 +19,8 @@
 #define   MESH_PASSWORD   "password"
 #define   MESH_PORT       5555
 
-#define   STATION_SSID     "KuangYi"
-#define   STATION_PASSWORD "qwertyuiop"
+#define   STATION_SSID     "Poh"
+#define   STATION_PASSWORD "lsps353ycss"
 
 #define HOSTNAME "MQTT_Bridge"
 
@@ -56,7 +56,7 @@ WiFiClient wifiClient;
 SimpleList<uint32_t> nodes;
 IPAddress getlocalIP();
 IPAddress myIP(0,0,0,0);
-IPAddress mqttBroker(172, 20, 10, 3);
+IPAddress mqttBroker(192, 168, 68, 103);
 PubSubClient mqttClient(mqttBroker, 1883, mqttCallback, wifiClient);
 // Priority Queue Declaration
 std::priority_queue<CustomMessage, std::vector<CustomMessage>, std::function<bool(const CustomMessage&, const CustomMessage&)>> messageQueue(
@@ -82,12 +82,7 @@ void setup() {
   mesh.setRoot(true);
   mesh.setContainsRoot(true);
 
-  M5.Lcd.setRotation(3);
-  M5.Lcd.fillScreen(BLACK);
-  M5.Lcd.setCursor(0, 0, 2);
-  M5.Lcd.println(mesh.getNodeId());
-  M5.Lcd.println(getlocalIP().toString());
-  M5.Lcd.println("Routing Table:");
+  displayLCD();
 }
 
 void loop() {
@@ -97,7 +92,7 @@ void loop() {
   if(myIP != getlocalIP()){
     myIP = getlocalIP();
     Serial.println("My IP is " + myIP.toString());
-
+    displayLCD();
     if (mqttClient.connect("painlessMeshClient")) {
       Serial.println("Inside connected");
       mqttClient.publish("painlessMesh/from/gateway","Ready!");
@@ -105,6 +100,7 @@ void loop() {
       String msg;
       msg += "Hello It's the bridge";
       mqttClient.publish("mqtt_bridge", msg.c_str());
+
     } 
   }
 }
@@ -113,8 +109,16 @@ void displayLCD(){
   M5.Lcd.setRotation(3);
   M5.Lcd.fillScreen(BLACK);
   M5.Lcd.setCursor(0, 0, 2);
+  M5.Lcd.println("Mesh Network IP: " + mesh.getAPIP().toString());
   M5.Lcd.println(mesh.getNodeId());
+  M5.Lcd.println("My IP Address is: " + getlocalIP().toString());
   M5.Lcd.println("Routing Table:");
+
+  SimpleList<uint32_t>::iterator node = nodes.begin();
+  for (uint32_t node : nodes) {
+    M5.Lcd.print("Node ID: ");
+    M5.Lcd.println(node);
+  }
 }
 
 
