@@ -129,7 +129,16 @@ void receivedCallback(uint32_t from, String &msg) {
         // Serial.println(error.c_str());
         return; // Early return if deserialization fails
     }
-
+    // handles the broadcast to add new knownServers to the knownServers list
+    if (inDoc["update"] == "update") {
+        // handle the broadcast from the server to append to the 
+        knownServers.push_back(inDoc["newServer"].as<uint32_t>());
+        // Check if appended
+        for (int i = 0; i < knownServers.size(); i++) {
+            Serial.println(knownServers.at(i));
+        }
+        return;
+    }
     // Extract information directly from inDoc
     uint32_t originalID = inDoc["rootSender"];
     float binCapacity = inDoc["binCapacity"];

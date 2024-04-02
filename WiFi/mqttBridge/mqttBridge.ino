@@ -14,6 +14,7 @@
 #include <PubSubClient.h>
 #include <WiFiClient.h>
 #include "M5StickCPlus.h"
+#include <XxHash_arduino.h>
 
 #define   MESH_PREFIX     "dustbin"
 #define   MESH_PASSWORD   "password"
@@ -41,6 +42,7 @@ void receivedCallback(const uint32_t &from, const String &msg);
 void onChangedCallback();
 void mqttCallback(char* topic, byte* payload, unsigned int length);
 void displayLCD();
+void resubscribe();
 
 // JSON management
 String serializeMessage(const CustomMessage& message);
@@ -52,10 +54,12 @@ void addToMessageQueue(const CustomMessage& message);
 
 // Tasks
 Task taskProcessQueue( TASK_SECOND * 10, TASK_FOREVER, &processMessagesFromQueue);
-
+Task taskResubscribe( TASK_SECOND * 60, TASK_FOREVER, &resubscribe);
 /*===================================================================*/
 /*                         Global variables                          */
 /*===================================================================*/
+String authentication = "password";
+
 // Task manager
 Scheduler taskScheduler;
 
@@ -96,7 +100,9 @@ void setup() {
   // initialize all scheduled tasks
   taskScheduler.init();
   taskScheduler.addTask(taskProcessQueue);
+  taskScheduler.addTask(taskResubscribe);
   taskProcessQueue.enable();
+  taskResubscribe.enable();
 }
 
 void loop() {
@@ -110,6 +116,7 @@ void loop() {
     displayLCD();
 
     if (mqttClient.connect("painlessMeshClient")) {
+      mqttClient.subscribe("update/#");
       Serial.println("MQTT Client is connected!");
     } 
   }
@@ -155,7 +162,6 @@ CustomMessage deserializeMessage(const String& jsonString) {
   deserializeJson(doc, jsonString);
 
   CustomMessage message;
-
   // Uses the JSON Document with the appropriate keys to create a CustomMessage
   message.rootSender = doc["rootSender"].as<String>();
   message.binCapacity = doc["binCapacity"].as<float>();
@@ -166,10 +172,25 @@ CustomMessage deserializeMessage(const String& jsonString) {
 
 void receivedCallback( const uint32_t &from, const String &msg ) {
   Serial.printf("bridge: Received from %u msg=%s, server time: %u\n", from, msg.c_str(), mesh.getNodeTime());
+
+  StaticJsonDocument<200> doc;
+  deserializeJson(doc, msg);
+  // properly handle the broadcast of updating other knownServers if any
+  if(doc["update"] == "update")
+  {
+    return;
+  }
+
   CustomMessage receivedMessage;
   receivedMessage = deserializeMessage(msg);
   // add the message to a queue to process later so it won't introduce delays and not to drop any packets to provide QOS 1
   addToMessageQueue(receivedMessage);
+
+}
+
+// Function to resubscribe to all topics in mqttBroker when the mqtt broker fails
+void resubscribe(){
+  mqttClient.subscribe("update/#");
 }
 
 void processMessagesFromQueue() {
@@ -197,41 +218,51 @@ void onChangedCallback(){
 
 // used for when broker sends a message to this bridge network to get the callback targetStr information, but not applicable for our usecase thus far
 void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
-  char* cleanPayload = (char*)malloc(length+1);
-  memcpy(cleanPayload, payload, length);
-  cleanPayload[length] = '\0';
-  String msg = String(cleanPayload);
-  free(cleanPayload);
+  StaticJsonDocument<200> doc;
+  deserializeJson(doc, payload);
+  String auth = doc["auth"].as<String>();
+  uint32_t serverToAdd = doc["newServer"].as<uint32_t>();
+  Serial.println(serverToAdd);
 
-  String targetStr = String(topic).substring(16);
+  char resultHash[9];
+  char serverHash[9];
+  xxh32(resultHash, auth.c_str());
+  xxh32(serverHash, authentication.c_str());
 
-  if(targetStr == "gateway")
-  {
-    if(msg == "getNodes")
-    {
-      auto nodes = mesh.getNodeList(true);
-      String str;
-      for (auto &&id : nodes)
-        str += String(id) + String(" ");
-      mqttClient.publish("painlessMesh/from/gateway", str.c_str());
+  bool hashesMatch = true;
+
+  for (int i = 0; i < 9; i++) {
+    if (serverHash[i] != resultHash[i]) {
+      hashesMatch = false;
+      break;
     }
   }
-  else if(targetStr == "broadcast") 
+  if(hashesMatch)
   {
+    String msg;
+    msg += "{\"update\":\"update\",\"newServer\":";
+    msg += serverToAdd;
+    msg += "}";
     mesh.sendBroadcast(msg);
+    Serial.println("Broadcasting: " + msg);
   }
   else
   {
-    uint32_t target = strtoul(targetStr.c_str(), NULL, 10);
-    if(mesh.isConnected(target))
-    {
-      mesh.sendSingle(target, msg);
-    }
-    else
-    {
-      mqttClient.publish(MQTT_TOPIC, "Client not connected!");
-    }
+    Serial.println("Access denied");
   }
+  // broadcast to all nodes
+  // else
+  // {
+  //   uint32_t target = strtoul(targetStr.c_str(), NULL, 10);
+  //   if(mesh.isConnected(target))
+  //   {
+  //     mesh.sendSingle(target, msg);
+  //   }
+  //   else
+  //   {
+  //     mqttClient.publish(MQTT_TOPIC, "Client not connected!");
+  //   }
+  // }
 }
 
 // get THIS bridge node's internal IP address to the bridge's AP. A gateway to centralized internet access
