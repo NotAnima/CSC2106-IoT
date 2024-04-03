@@ -5,7 +5,10 @@
 #include <ArduinoJson.h>
 #include <vector>
 #include <algorithm>
+
+// Initialize Ultrasonice Sensor Pins
 #include <HCSR04.h>
+HCSR04 hc(0, 26);
 
 #define MESH_PREFIX "dustbin"
 #define MESH_PASSWORD "password"
@@ -43,7 +46,7 @@ void getBinCapacityCallback();
 // Task related comes after regular function prototypes
 Task taskDisplayLCD(TASK_SECOND * 5, TASK_FOREVER, &displayLCD);
 Task tSendCustomMessage(TASK_SECOND * 10, TASK_FOREVER, &sendCustomMessage);
-Task taskGetBinCapacity(TASK_SECOND * 10, TASK_FOREVER, &getBinCapacityCallback);
+Task taskGetBinCapacity(TASK_SECOND * 2, TASK_FOREVER, &getBinCapacityCallback);
 
 /*===================================================================*/
 /*                         Global variables                          */
@@ -119,9 +122,9 @@ void displayLCD(){
 }
 
 void getBinCapacityCallback() {
-  // float currentBinCapacity = getActualBinCapacity(hc.dist());
+  float currentBinCapacity = getActualBinCapacity(hc.dist());
   // Comment bottom line and uncomment top line for ultrasonic data
-  float currentBinCapacity = getBinCapacity();
+  // float currentBinCapacity = getBinCapacity();
 
   Serial.println("Bin Capacity: " + String(currentBinCapacity));
   uint32_t targetId = preferredServer;
