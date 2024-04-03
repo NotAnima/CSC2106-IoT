@@ -37,8 +37,8 @@ struct CustomMessage {
 /*                         Function Prototypes                       */
 /*===================================================================*/
 void enqueueMessage(const CustomMessage& message);
-float getActualBinCapacity();
-float getBinCapacity();
+void getActualBinCapacity();
+void getBinCapacity();
 void sendCustomMessage();
 void displayLCD();
 void getBinCapacityCallback();
@@ -76,16 +76,15 @@ void enqueueMessage(const CustomMessage& message) {
 }
 
 // Mock Bin Capacity
-float getBinCapacity() {
+void getBinCapacity() {
   if (binCapacity >= 100) {
     binCapacity = 0;
   }
   binCapacity += 1;
-  return binCapacity;
 }
 
 // Actual Bin Capacity
-float getActualBinCapacity(float distance){
+void getActualBinCapacity(float distance){
   if(distance < 10){
     binCapacity = 100 - (distance*10);
   }else if(distance > 10){
@@ -94,7 +93,6 @@ float getActualBinCapacity(float distance){
   else{
     binCapacity = 100;
   }
-  return binCapacity;
 }
 
 void sendCustomMessage() {
@@ -122,22 +120,22 @@ void displayLCD(){
 }
 
 void getBinCapacityCallback() {
-  float currentBinCapacity = getActualBinCapacity(hc.dist());
+  getActualBinCapacity(hc.dist());
   // Comment bottom line and uncomment top line for ultrasonic data
-  // float currentBinCapacity = getBinCapacity();
+  // getBinCapacity();
 
-  Serial.println("Bin Capacity: " + String(currentBinCapacity));
+  Serial.println("Bin Capacity: " + String(binCapacity));
   uint32_t targetId = preferredServer;
 
   StaticJsonDocument<200> doc;
   doc["rootSender"] = mesh.getNodeId();
-  doc["binCapacity"] = currentBinCapacity;
+  doc["binCapacity"] = binCapacity;
   doc["rootTimestampSent"] = mesh.getNodeTime();
 
   String payload;
   serializeJson(doc, payload);
 
-  CustomMessage message(targetId, payload, currentBinCapacity);
+  CustomMessage message(targetId, payload, binCapacity);
   enqueueMessage(message);
 }
 
