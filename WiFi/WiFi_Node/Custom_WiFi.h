@@ -5,6 +5,7 @@
 #include <ArduinoJson.h>
 #include <vector>
 #include <algorithm>
+#include <HCSR04.h>
 
 #define MESH_PREFIX "dustbin"
 #define MESH_PASSWORD "password"
@@ -33,6 +34,7 @@ struct CustomMessage {
 /*                         Function Prototypes                       */
 /*===================================================================*/
 void enqueueMessage(const CustomMessage& message);
+float getActualBinCapacity();
 float getBinCapacity();
 void sendCustomMessage();
 void displayLCD();
@@ -70,12 +72,25 @@ void enqueueMessage(const CustomMessage& message) {
     });
 }
 
-// TODO: Phileo to add in your ultrasonic code
+// Mock Bin Capacity
 float getBinCapacity() {
   if (binCapacity >= 100) {
     binCapacity = 0;
   }
   binCapacity += 1;
+  return binCapacity;
+}
+
+// Actual Bin Capacity
+float getActualBinCapacity(float distance){
+  if(distance < 10){
+    binCapacity = 100 - (distance*10);
+  }else if(distance > 10){
+    binCapacity=0;
+  }
+  else{
+    binCapacity = 100;
+  }
   return binCapacity;
 }
 
@@ -104,7 +119,10 @@ void displayLCD(){
 }
 
 void getBinCapacityCallback() {
+  // float currentBinCapacity = getActualBinCapacity(hc.dist());
+  // Comment bottom line and uncomment top line for ultrasonic data
   float currentBinCapacity = getBinCapacity();
+
   Serial.println("Bin Capacity: " + String(currentBinCapacity));
   uint32_t targetId = preferredServer;
 
