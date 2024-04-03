@@ -25,7 +25,7 @@
 
 #define HOSTNAME "MQTT_Bridge"
 #define MQTT_TOPIC "dustbinInfo"
-
+#define MESH_CLIENT_NAME "painlessMeshClient"
 /*===================================================================*/
 /*                     Custom Struct Declaration                     */
 /*===================================================================*/
@@ -91,6 +91,12 @@ void setup() {
   mesh.onChangedConnections(&onChangedCallback);
   mesh.stationManual(STATION_SSID, STATION_PASSWORD);
   mesh.setHostname(HOSTNAME);
+  
+  /* Comment mesh.setRoot() to make it not be the master bridge to avoid sub-meshes
+  That way, this node bridge will join as server
+  Currently the ESP32 has a hardware issue which will cause submesh fissures even with setRoot(false), so its not possible
+  Can simulate this effect by restarting the bin nodes to join the bifurcated submesh created with the same codebase without
+  the need of reflashing */
   mesh.setRoot(true);
   mesh.setContainsRoot(true);
 
@@ -115,7 +121,7 @@ void loop() {
     Serial.println("My IP is " + myIP.toString());
     displayLCD();
 
-    if (mqttClient.connect("painlessMeshClient")) {
+    if (mqttClient.connect(MESH_CLIENT_NAME)) {
       mqttClient.subscribe("update/#");
       Serial.println("MQTT Client is connected!");
     } 
@@ -175,9 +181,11 @@ void receivedCallback( const uint32_t &from, const String &msg ) {
 
   StaticJsonDocument<200> doc;
   deserializeJson(doc, msg);
-  // properly handle the broadcast of updating other knownServers if any
+
+  // properly handle the broadcast of updating other knownServers if any as bridge servers don't have to care about it
   if(doc["update"] == "update")
   {
+    Serial.println("Broadcast message received, dropping it");
     return;
   }
 
@@ -194,7 +202,7 @@ void resubscribe(){
 }
 
 void processMessagesFromQueue() {
-  if (mqttClient.connect("painlessMeshClient")) {
+  if (mqttClient.connect(MESH_CLIENT_NAME)) {
     while(!messageQueue.empty()) {
       CustomMessage message = messageQueue.top();
       messageQueue.pop();
@@ -243,6 +251,7 @@ void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
     msg += "{\"update\":\"update\",\"newServer\":";
     msg += serverToAdd;
     msg += "}";
+    // broadcasts the new server the mesh bin nodes should add into their knownServers list
     mesh.sendBroadcast(msg);
     Serial.println("Broadcasting: " + msg);
   }
@@ -250,19 +259,7 @@ void mqttCallback(char* topic, uint8_t* payload, unsigned int length) {
   {
     Serial.println("Access denied");
   }
-  // broadcast to all nodes
-  // else
-  // {
-  //   uint32_t target = strtoul(targetStr.c_str(), NULL, 10);
-  //   if(mesh.isConnected(target))
-  //   {
-  //     mesh.sendSingle(target, msg);
-  //   }
-  //   else
-  //   {
-  //     mqttClient.publish(MQTT_TOPIC, "Client not connected!");
-  //   }
-  // }
+
 }
 
 // get THIS bridge node's internal IP address to the bridge's AP. A gateway to centralized internet access

@@ -9,18 +9,9 @@
 #define MESH_PREFIX "dustbin"
 #define MESH_PASSWORD "password"
 #define MESH_PORT 5555
-
-Scheduler ts;
-String latestReceivedMessage;
-String latestSentMessage;
-painlessMesh mesh;
-
-// Declare the knownServers here first
-std::vector<uint32_t> knownServers = {634095965};
-uint32_t preferredServer = knownServers[0]; // will initially be the first server in the list
-
-float binCapacity = 0.0;
-
+/*===================================================================*/
+/*                     Custom Struct Declaration                     */
+/*===================================================================*/
 struct CustomMessage {
     uint32_t targetId;
     String payload;
@@ -38,8 +29,38 @@ struct CustomMessage {
     CustomMessage(uint32_t id, const String& pl, float binCap) : targetId(id), payload(pl), priority(calculatePriority(binCap)) {}
 };
 
-std::vector<CustomMessage> messageQueue;
+/*===================================================================*/
+/*                         Function Prototypes                       */
+/*===================================================================*/
+void enqueueMessage(const CustomMessage& message);
+float getBinCapacity();
+void sendCustomMessage();
+void displayLCD();
+void getBinCapacityCallback();
 
+// Task related comes after regular function prototypes
+Task taskDisplayLCD(TASK_SECOND * 5, TASK_FOREVER, &displayLCD);
+Task tSendCustomMessage(TASK_SECOND * 10, TASK_FOREVER, &sendCustomMessage);
+Task taskGetBinCapacity(TASK_SECOND * 10, TASK_FOREVER, &getBinCapacityCallback);
+
+/*===================================================================*/
+/*                         Global variables                          */
+/*===================================================================*/
+Scheduler ts;
+String latestReceivedMessage;
+String latestSentMessage;
+painlessMesh mesh;
+// Declare the knownServers here first
+std::vector<uint32_t> knownServers = {634095965};
+ // will initially be the first server in the list
+uint32_t preferredServer = knownServers[0];
+std::vector<CustomMessage> messageQueue;
+float binCapacity = 0.0;
+
+
+/*===================================================================*/
+/*                         Function Logics                           */
+/*===================================================================*/
 void enqueueMessage(const CustomMessage& message) {
     messageQueue.push_back(message);
     
@@ -66,7 +87,9 @@ void sendCustomMessage() {
 
   if (!mesh.sendSingle(message.targetId, message.payload)) {
       Serial.println("Failed to send message.");
+      // reset the consecutive failed messages to 0 here
   } else {
+      // Implement the algorithm to select a new known server and reset the consecutive failed msgs if(knownServers.size() > 2)
       Serial.println("Message sent successfully.");
   }
 
@@ -74,29 +97,16 @@ void sendCustomMessage() {
 }
 
 void displayLCD(){
+  M5.Lcd.setRotation(3);
   M5.Lcd.fillScreen(BLACK);
-  M5.Lcd.setCursor(0, 0);
-  M5.Lcd.setTextColor(WHITE);
-  M5.lcd.setRotation(3);
+  M5.Lcd.setCursor(0, 0, 2);
   M5.Lcd.printf("NodeID: %u\n", mesh.getNodeId());
-  if(preferredServer == 634095965)
-  {
-    M5.Lcd.println("Grabbed the correct server ID");
-  }
-  // M5.Lcd.println("Preferred Server: " + preferredServer);
-  // Serial.println("Preferred Server: " + preferredServer);
 }
 
-Task taskDisplayLCD(TASK_SECOND * 5, TASK_FOREVER, &displayLCD);
-
-Task tSendCustomMessage(TASK_SECOND * 10, TASK_FOREVER, &sendCustomMessage);
-
 void getBinCapacityCallback() {
-    float currentBinCapacity = getBinCapacity();
-    Serial.println("Bin Capacity: " + String(currentBinCapacity));
-
+  float currentBinCapacity = getBinCapacity();
+  Serial.println("Bin Capacity: " + String(currentBinCapacity));
   uint32_t targetId = preferredServer;
-  // uint32_t targetId = 634094909; //131
 
   StaticJsonDocument<200> doc;
   doc["rootSender"] = mesh.getNodeId();
@@ -110,7 +120,6 @@ void getBinCapacityCallback() {
   enqueueMessage(message);
 }
 
-Task taskGetBinCapacity(TASK_SECOND * 10, TASK_FOREVER, &getBinCapacityCallback);
 
 void onNewConnectionCallback(uint32_t nodeId) {
     // Serial.printf("New Connection: %u\n", nodeId);
@@ -125,20 +134,25 @@ void receivedCallback(uint32_t from, String &msg) {
     DeserializationError error = deserializeJson(inDoc, msg);
 
     if (error) {
-        // Serial.print(F("deserializeJson() failed with code "));
-        // Serial.println(error.c_str());
         return; // Early return if deserialization fails
     }
+
     // handles the broadcast to add new knownServers to the knownServers list
     if (inDoc["update"] == "update") {
-        // handle the broadcast from the server to append to the 
+
+        // handle the broadcast from the server to append to the list 
+        // (deprecated because of ESP32 hardware issues: https://www.esp32.com/viewtopic.php?f=21&t=27265)
+        // Keeping it here for proof of concept ideation
+        
         knownServers.push_back(inDoc["newServer"].as<uint32_t>());
-        // Check if appended
         for (int i = 0; i < knownServers.size(); i++) {
             Serial.println(knownServers.at(i));
         }
+        // assign the updatedServer to be this newServer key
+        preferredServer = inDoc["newServer"].as<uint32_t>();
         return;
     }
+
     // Extract information directly from inDoc
     uint32_t originalID = inDoc["rootSender"];
     float binCapacity = inDoc["binCapacity"];
