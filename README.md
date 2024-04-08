@@ -11,7 +11,14 @@ This project utilizes Arduino boards to create a mesh network using LoRa and WiF
 - Laptop/Raspberry Pi (Flask Server)
 
 ## Setup Instructions
-
+- Ensure that [mosquitto](https://mosquitto.org) is installed 
+- Alter the config file appropriately to the for mosquitto appropriately to the ports that you want to run the services on
 ## Required Libraries
 Ensure the following libraries are installed in your Arduino IDE:
-https://github.com/gamegine/HCSR04-ultrasonic-sensor-lib
+- [HCSR04 ultrasonic sensor Library](https://github.com/gamegine/HCSR04-ultrasonic-sensor-lib)
+- [painlessMesh v1.4.10 and the complementing Libraries](https://gitlab.com/painlessMesh/painlessMesh)
+- [xXHash_arduino](https://www.arduino.cc/reference/en/libraries/xxhash_arduino/)
+- [M5 Stack Library](https://github.com/m5stack/M5StickC-Plus)
+- [Arduino Json Library](https://arduinojson.org)
+- [Queue Library](https://www.arduino.cc/reference/en/libraries/queue/)
+- [PubSubClient for MQTT](https://www.arduino.cc/reference/en/libraries/pubsubclient/)
