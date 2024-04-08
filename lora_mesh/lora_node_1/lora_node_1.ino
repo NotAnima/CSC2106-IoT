@@ -45,6 +45,24 @@ void setup()
 
 void loop()
 {
+  /* =================================== */
+  /* === HANDLING SENDING OF PACKETS === */
+  /* =================================== */
+    if (capacityPackets != 0)
+    {
+      if (millis() - lastPacketSentTime >= packetSendInterval || capacityPackets >= 2)
+      {
+        for (int i = 0; i < capacityPackets; i++)
+        {
+          forward_capacity_packet(processCapacityPackets[i].alertNode.nodeId, processCapacityPackets[i].binCapacity);
+        }
+        lastPacketSentTime = millis();
+      }
+    }
+  /* =================================== */
+  /* === HANDLING SENDING OF PACKETS === */
+  /* =================================== */
+
   /* ========================================================== */
   /* === HANDLING RESPONSE TO ADD NODE TO ROUTING TABLE REQ === */
   /* === & REQUEST FOR FORWARDING CAPACITY BINS TO SERVER   === */
@@ -53,7 +71,8 @@ void loop()
   {
     Packet packet;
 
-    if (rf95.recv((uint8_t *)&packet, sizeof(packet)))
+    uint8_t len = sizeof(packet);
+    if (rf95.recv((uint8_t *)&packet, &len)) 
     {
       if (packet.authKey == AUTH_KEY)
       {
@@ -284,7 +303,9 @@ void handle_node_packet()
 
   packet.msgType = MSG_TYPE_RES_FORWARD_NODE;
   packet.data.nodePacket = nodePacket;
-  sendPacket((uint8_t *)&packet, sizeof(packet));
+
+  uint8_t len = sizeof(packet);
+  sendPacket((uint8_t *)&packet, &len);
   Serial.println("RESPONSE: Sent confirmation to be a forwarding node");
 }
 
@@ -299,7 +320,6 @@ void handle_capacity_packet(CapacityPacket &cpacket)
     /* === PACKET PRIORITY BY CAPACITY BEFORE FORWARDING == */
     /* ========================================================== */
     add_to_capacity_list(cpacket);
-    forward_capacity_packet(processCapacityPackets[0].alertNode.nodeId, processCapacityPackets[0].binCapacity);
   }
 }
 
@@ -311,7 +331,9 @@ void forward_node_packet()
   packet.authKey = AUTH_KEY;
   packet.msgType = MSG_TYPE_REQ_FORWARD_NODE;
   packet.data.nodePacket = sendRequestingNode;
-  sendPacket((uint8_t *)&packet, sizeof(packet));
+
+  uint8_t len = sizeof(packet);
+  sendPacket((uint8_t *)&packet, &len);
 
   uint8_t ackMessage = MSG_TYPE_ACK_FAILURE;
 
@@ -325,8 +347,8 @@ void forward_node_packet()
     {
       Packet packet;
 
-      if (rf95.recv((uint8_t *)&packet, sizeof(packet)))
-      {
+      uint8_t len = sizeof(packet);
+      if (rf95.recv((uint8_t *)&packet, &len)) {
         if (packet.authKey == AUTH_KEY && packet.msgType == MSG_TYPE_RES_FORWARD_NODE && packet.data.nodePacket.node.nodeId == 0)
         {
           Serial.println("RESPONSE: Node's acknowledgement as forwarding node");
@@ -339,7 +361,8 @@ void forward_node_packet()
     else
     {
       Serial.println("ACK: Not received, attempting to retransmit");
-      sendPacket((uint8_t *)&packet, sizeof(packet));
+      uint8_t len = sizeof(packet);
+      sendPacket((uint8_t *)&packet, &len);
     }
   }
 
@@ -358,7 +381,9 @@ void forward_capacity_packet(uint8_t alertId, uint8_t binCapacity)
   packet.authKey = AUTH_KEY;
   packet.msgType = MSG_TYPE_CAPACITY;
   packet.data.capacityPacket = construct_capacity_packet(alertId, binCapacity);
-  sendPacket((uint8_t *)&packet, sizeof(packet));
+
+  uint8_t len = sizeof(packet);
+  sendPacket((uint8_t *)&packet, &len);
 
   uint8_t ackMessage = MSG_TYPE_ACK_FAILURE;
 
@@ -372,7 +397,8 @@ void forward_capacity_packet(uint8_t alertId, uint8_t binCapacity)
     {
       AckPacket ackPacket;
 
-      if (rf95.recv((uint8_t *)&ackPacket, sizeof(ackPacket)))
+      uint8_t len = sizeof(ackPacket);
+      if (rf95.recv((uint8_t *)&ackPacket, &len))
       {
         if (ackPacket.receiverNode.nodeId == NODE_ID && ackPacket.authKey == AUTH_KEY && ackPacket.msgType == MSG_TYPE_ACK_SUCCEED)
         {
@@ -386,7 +412,8 @@ void forward_capacity_packet(uint8_t alertId, uint8_t binCapacity)
           {
             Serial.println("RESPONSE: Forwarding ACK to alert node");
             ackPacket = construct_ack_packet(processCapacityPackets[0].alertNode.nodeId, processCapacityPackets[0].senderNode.nodeId, MSG_TYPE_ACK_SUCCEED);
-            sendPacket((uint8_t *)&ackPacket, sizeof(ackPacket));
+            uint8_t len = sizeof(ackPacket);
+            sendPacket((uint8_t *)&ackPacket, &len);
             remove_from_capacity_list();
           }
           break;
@@ -396,7 +423,8 @@ void forward_capacity_packet(uint8_t alertId, uint8_t binCapacity)
     else
     {
       Serial.println("ACK: Not received, attempting to retransmit");
-      sendPacket((uint8_t *)&packet, sizeof(packet));
+      uint8_t len = sizeof(packet);
+      sendPacket((uint8_t *)&packet, &len);
     }
   }
 

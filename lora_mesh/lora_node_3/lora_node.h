@@ -24,7 +24,7 @@ void (*resetFunc)(void) = 0; // declare reset function at address 0
 /* =============== MESH DEFINITIONS & STRUCTS =============== */
 /* ========================================================== */
 #define AUTH_KEY 0x01 // Shared secret key to authenticate nodes
-#define NODE_ID 1     // Id of this node (randomly generated)
+#define NODE_ID 3     // Id of this node (randomly generated)
 #define MAX_NODES 2
 #define MAX_CAPACITY_PACKETS 10
 #define ALERT_THRESHOLD 80
@@ -86,7 +86,7 @@ struct CapacityPacket processCapacityPackets[MAX_CAPACITY_PACKETS];
 /* ========================================================== */
 uint8_t connectedNodes = 0;  // current number of connected nodes
 uint8_t capacityPackets = 0; // current number of capacity packets
-uint8_t binCapacity = 0;     // simulated bin capacity (%)
+uint8_t binCapacity = 90;    // simulated bin capacity (%)
 unsigned long lastReceivedForwardingNode = millis();
 unsigned long requestForwardingNodeInterval = 10UL * 60 * 1000;
 bool alertSent = false;
@@ -108,8 +108,6 @@ void print_routing_table();
 /* ========================================================== */
 /* ============ CAPACITY HANDLING DECLARATION =============== */
 /* ========================================================== */
-unsigned long lastPacketSentTime = 0;
-const unsigned long packetSendInterval = 15000;
 void add_to_capacity_list(CapacityPacket cpacket);
 void remove_from_capacity_list();
 /* ========================================================== */
