@@ -52,11 +52,9 @@ void loop()
     {
       if (millis() - lastPacketSentTime >= packetSendInterval || capacityPackets >= 2)
       {
-        Serial.println(capacityPackets);
         for (int i = 0; i < capacityPackets; i++)
         {
           forward_capacity_packet(processCapacityPackets[i].alertNode.nodeId, processCapacityPackets[i].binCapacity);
-          Serial.println(capacityPackets);
         }
         lastPacketSentTime = millis();
       }
