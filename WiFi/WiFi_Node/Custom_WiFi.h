@@ -85,9 +85,9 @@ void getBinCapacity() {
 
 // Actual Bin Capacity
 void getActualBinCapacity(float distance){
-  if(distance < 10){
-    binCapacity = 100 - (distance*10);
-  }else if(distance > 10){
+  if(distance < 20){
+    binCapacity = 100 - (distance*5);
+  }else if(distance > 20){
     binCapacity=0;
   }
   else{
